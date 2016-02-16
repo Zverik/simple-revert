@@ -4,8 +4,8 @@ from collections import defaultdict
 from copy import deepcopy
 from lxml import etree
 
-#API_ENDPOINT = 'https://api.openstreetmap.org/api/0.6'
-API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org/api/0.6'
+API_ENDPOINT = 'https://api.openstreetmap.org/api/0.6'
+#API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org/api/0.6'
 
 # Copied from http://stackoverflow.com/a/3884771/1297601
 class MethodRequest(urllib2.Request):
@@ -245,8 +245,8 @@ if __name__ == '__main__':
   # Create changeset
   create_xml = etree.Element('osm')
   ch = etree.SubElement(create_xml, 'changeset')
-  ch.set('created_by', 'simple-revert.py')
-  ch.set('comment', 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets])))
+  ch.append(etree.Element('tag', {'k': 'created_by', 'v': 'simple-revert.py'})
+  ch.append(etree.Element('tag', {'k': 'comment', 'v': 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))}))
   request = MethodRequest(API_ENDPOINT + '/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
   try:
     changeset_id = int(opener.open(request).read())
@@ -266,8 +266,10 @@ if __name__ == '__main__':
   request = MethodRequest('{0}/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)
   try:
     response = opener.open(request)
+  except urllib2.HTTPError as e:
+    print 'Server rejected the changeset:', e
   except Exception as e:
-    print 'Failed to upload changetset contents', e
+    print 'Failed to upload changetset contents:', e
     # Not returning, since we need to close the changeset
 
   request = MethodRequest('{0}/changeset/{1}/close'.format(API_ENDPOINT, changeset_id), method=MethodRequest.PUT)
