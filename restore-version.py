@@ -169,7 +169,6 @@ if __name__ == '__main__':
     queue.extend(find_new_refs(obj))
     processed[(obj['type'], obj['id'])] = True
 
-  print changes
   tags = {
     'created_by': 'restore-version.py',
     'comment': 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
