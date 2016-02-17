@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys, urllib2, re
 from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
+from collections import deque
 
 try:
   from lxml import etree
@@ -10,11 +11,13 @@ except ImportError:
   except ImportError:
     import xml.etree.ElementTree as etree
 
+MAX_DEPTH = 10
+
 def parse_url(s):
   """Parses typeNNN or URL, returns a tuple of (type, id, version)."""
   s = s.strip().lower()
   t = i = v = None
-  m = re.match(r'([nwr])[a-z]+[ /.-]+([0-9]+)', s)
+  m = re.match(r'([nwr])[a-z]*[ /.-]*([0-9]+)', s)
   if m:
     t = m.group(1)
     i = int(m.group(2))
@@ -32,6 +35,27 @@ def parse_url(s):
       if m.lastindex > 2:
         v = int(m.group(3))
   return (t, i, v)
+
+def find_new_refs(old, last=None):
+  """Finds references in old, which are not in last."""
+  result = []
+  if old['type'] == 'way' and 'refs' in old:
+    nhash = {}
+    if last is not None and 'refs' in last:
+      for nd in last['refs']:
+        nhash[nd] = True
+    for nd in old['refs']:
+      if nd not in nhash:
+        result.append(('node', nd))
+  elif old['type'] == 'relation' and 'refs' in old:
+    mhash = {}
+    if last is not None and 'refs' in last:
+      for member in last['refs']:
+        mhash[(member[0], member[1])] = True
+    for member in old['refs']:
+      if (member[0], member[1]) not in mhash:
+        result.append((member[0], member[1]))
+  return result
 
 if __name__ == '__main__':
   if len(sys.argv) < 2:
@@ -78,26 +102,76 @@ if __name__ == '__main__':
 
   if obj_version is None:
     # Print history and exit
-    for h in history.iterchildren():
+    for h in history[-MAX_DEPTH-1:]:
       print 'Version {0}: {1}changeset {2} on {3} by {4}'.format(h.get('version'), 'deleted in ' if h.get('visible') == 'false' else '', h.get('changeset'), h.get('timestamp'), h.get('user'))
     sys.exit(0)
 
-  last_version = history[-1].get('version')
+  last_version = int(history[-1].get('version'))
   if obj_version < 0:
     obj_version = last_version + obj_version
 
-  if obj_version < 0 or obj_version >= last_version:
-    print 'Incorrect version {0}, should be between 1 and {1}.'.format(obj_version, last_version - 1)
+  if obj_version <= 0 or obj_version >= last_version:
+    if last_version == 1:
+      print 'The object has only one version, nothing to restore.'
+    else:
+      print 'Incorrect version {0}, should be between 1 and {1}.'.format(obj_version, last_version - 1)
+    sys.exit(1)
+
+  if obj_version < last_version - MAX_DEPTH:
+    print 'Restoring objects more than {0} versions back is blocked.'.format(MAX_DEPTH)
     sys.exit(1)
 
   # If we downloaded an incomplete history, add that version
-  found_version = False
+  vref = None
   for h in history.iterchildren():
     if int(h.get('version')) == obj_version:
-      found_version = True
-  if not found_version:
+      vref = h
+  if vref is None:
     response = opener.open('{0}/{1}/{2}/{3}'.format(API_ENDPOINT, obj_type, obj_id, obj_version))
-    history.insert(0, etree.parse(response).getroot()[0])
+    vref = etree.parse(response).getroot()[0]
+    history.insert(0, vref)
 
-  # TODO
-  raise Exception('Not implemented')
+  if vref.get('visible') == 'false':
+    print 'Will not delete the object, use other means.'
+    sys.exit(1)
+
+  # Now building a list of changes, traversing all references, finding object to undelete
+  obj = obj_to_dict(vref)
+  obj['version'] = last_version
+  changes = [obj]
+  queue = deque()
+  processed = {}
+  queue.extend(find_new_refs(obj, obj_to_dict(history[-1])))
+  while len(queue):
+    qobj = queue.popleft()
+    if qobj in processed:
+      continue
+    # Download last version and grab references from it
+    try:
+      response = opener.open('{0}/{1}/{2}'.format(API_ENDPOINT, qobj[0], qobj[1]))
+      obj = obj_to_dict(etree.parse(response).getroot()[0])
+    except urllib2.HTTPError as e:
+      if e.code == 410:
+        # Found a deleted object, download history and restore
+        response = opener.open('{0}/{1}/{2}/history'.format(API_ENDPOINT, qobj[0], qobj[1]))
+        ohist = etree.parse(response).getroot()
+        i = len(ohist) - 1
+        while i > 0 and ohist[i].get('visible') == 'false':
+          i -= 1
+        if ohist[i].get('visible') != 'true':
+          print 'Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.'
+          sys.exit(3)
+        obj = obj_to_dict(ohist[i])
+        obj['version'] = int(ohist[-1].get('version'))
+        changes.append(obj)
+      else:
+        raise e
+    queue.extend(find_new_refs(obj))
+    processed[(obj['type'], obj['id'])] = True
+
+  print changes
+  tags = {
+    'created_by': 'restore-version.py',
+    'comment': 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
+  }
+  upload_changes(changes, tags)

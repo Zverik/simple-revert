@@ -113,6 +113,7 @@ def upload_changes(changes, changeset_tags):
 
   # Now we need the OSM credentials
   auth_header = read_auth()
+  opener = urllib2.build_opener()
   opener.addheaders = [('Authorization', auth_header)]
 
   # Create changeset
