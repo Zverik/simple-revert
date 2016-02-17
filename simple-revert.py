@@ -2,8 +2,15 @@
 import sys, urllib2
 from collections import defaultdict
 from copy import deepcopy
-from lxml import etree
 from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
+
+try:
+  from lxml import etree
+except ImportError:
+  try:
+    import xml.etree.cElementTree as etree
+  except ImportError:
+    import xml.etree.ElementTree as etree
 
 def make_diff(obj, obj_prev):
   """Takes two object dicts and produces a diff."""

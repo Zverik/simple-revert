@@ -7,7 +7,7 @@ For example, if you deleted a lot of objects, or changed many tags at once.
 ## Installation
 
     git clone https://github.com/Zverik/simple-revert.git
-    sudo pip install lxml
+    cd simple-revert
 
 ## Usage
 

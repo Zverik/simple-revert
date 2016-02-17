@@ -1,7 +1,14 @@
 #!/usr/bin/env python
 import sys, urllib2, re
-from lxml import etree
 from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
+
+try:
+  from lxml import etree
+except ImportError:
+  try:
+    import xml.etree.cElementTree as etree
+  except ImportError:
+    import xml.etree.ElementTree as etree
 
 def parse_url(s):
   """Parses typeNNN or URL, returns a tuple of (type, id, version)."""

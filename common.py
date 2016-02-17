@@ -1,7 +1,14 @@
 # Common constants and functions for reverting scripts.
 
 import urllib2, getpass, base64
-from lxml import etree
+
+try:
+  from lxml import etree
+except ImportError:
+  try:
+    import xml.etree.cElementTree as etree
+  except ImportError:
+    import xml.etree.ElementTree as etree
 
 API_ENDPOINT = 'https://api.openstreetmap.org/api/0.6'
 #API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org/api/0.6'
