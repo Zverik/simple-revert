@@ -2,6 +2,7 @@
 import sys, urllib2
 from collections import defaultdict
 from copy import deepcopy
+from urllib import quote
 from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
 
 try:
@@ -136,9 +137,32 @@ if __name__ == '__main__':
   if len(sys.argv) < 2:
     print 'This script reverts simple OSM changesets. It will tell you if it fails.'
     print 'Usage: {0} <changeset_id> [<changeset_id> ...]'.format(sys.argv[0])
+    print 'To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0])
     sys.exit(1)
 
   opener = urllib2.build_opener()
+  if len(sys.argv) == 2 and not sys.argv[1].isdigit():
+    # We have a display name, show their changesets
+    try:
+      response = opener.open('{0}/changesets?closed=true&display_name={1}'.format(API_ENDPOINT, quote(sys.argv[1])))
+      root = etree.parse(response).getroot()
+      for changeset in root[:15]:
+        created_by = '???'
+        comment = '<no comment>'
+        for tag in changeset.iterchildren('tag'):
+          if tag.get('k') == 'created_by':
+            created_by = tag.get('v').encode('utf-8')
+          elif tag.get('k') == 'comment':
+            comment = tag.get('v').encode('utf-8')
+        print 'Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment)
+    except urllib2.HTTPError as e:
+      if e.code == 404:
+        print 'No such user found.'
+        sys.exit(2)
+      else:
+        raise e
+    sys.exit(0)
+
   changesets = [int(x) for x in sys.argv[1:]]
   ch_users = {}
   diffs = defaultdict(dict)

@@ -23,6 +23,11 @@ Specify changeset ids as the `simple-revert` script arguments. E.g.
 If there are no errors, it will ask you for OSM login and password (which
 are immediately forgotten) and upload the changes.
 
+To list recent changesets by a user (e.g. you), specify their name as
+the only argument:
+
+    ./simple-revert.py Zverik
+
 ## Restore Version
 
 To restore an old object version, pass its type, id and version to
