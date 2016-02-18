@@ -41,12 +41,64 @@ def make_diff(obj, obj_prev):
 
     # Keeping references for ways and relations
     if 'refs' in obj and obj_prev['refs'] != obj['refs']:
-      raise Exception('Members for {0} {1} were changed, cannot roll that back'.format(obj['type'], obj['id']))
+      diff.append(('refs', obj_pref['refs'], obj['refs']))
 
   return diff
 
 def merge_diffs(diff, diff_newer):
   """Merge two sequential diffs."""
+  result = [diff_newer[0]]
+  # First, resolve creating and deleting
+  if len(diff) == 2 and diff[1][0] == 'create':
+    if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
+      pass
+    elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
+      pass
+    else:
+      pass
+  elif len(diff) == 2 and diff[1][0] == 'delete':
+    if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
+      pass
+    elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
+      pass
+    else:
+      pass
+  else:
+    if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
+      pass
+    elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
+      pass
+    else:
+      # O(n^2) complexity, because diffs are usually small
+      for change in diff:
+        if change[0] == 'move' or change[0] == 'refs':
+          op_newer = None
+          for k in diff_newer:
+            if k[0] == change[0]:
+              op_newer = k
+          if op_newer is None:
+            result.append(change)
+          elif change[2] == op_newer[1]:
+            result.append((change[0], change[1], op_newer[2]))
+          else:
+            result.append(op_newer)
+        elif change[0] == 'tag':
+          op_newer = None
+          for k in diff_newer:
+            if k[0] == 'tag' and k[1] == change[1]:
+              op_newer = k
+          if op_newer is None:
+            result.append(change)
+          elif change[3] == op_newer[2]:
+            result.append(('tag', change[1], change[2], op_newer[3]))
+          else:
+            result.append(op_newer)
+        else:
+          raise Exception('Missing processor for merging {0} operation'.format(change[0]))
+
+  if len(result) > 1:
+    return result
+  # Creations and deletions will cause this exception for now
   raise Exception('Merging diffs is not supported yet')
 
 def apply_diff(diff, obj):
@@ -73,6 +125,9 @@ def apply_diff(diff, obj):
         # If a modified tag was deleted after, do not restore it
         if change[3] is None:
           obj['tags'][change[1]] = change[2]
+    elif change[0] == 'refs':
+      if obj['refs'] != change[2]:
+        raise Exception('Members for {0} {1} were changed, cannot roll that back'.format(obj['type'], obj['id']))
     else:
       raise Exception('Unknown or unprocessed by apply_diff change type: {0}'.format(change[0]))
   return obj
@@ -119,9 +174,13 @@ if __name__ == '__main__':
 
   # merge versions of same objects in diffs
   for k, versions in diffs.iteritems():
-    if len(versions) > 1:
-      raise Exception('Multiple versions of a same object ({0} {1}) are not supported yet.'.format(k[0], k[1]))
-    diffs[k] = versions.values()[0]
+    diff = None
+    for k in sorted(versions.keys()):
+      if diff is None:
+        diff = versions[k]
+      else:
+        diff = merge_diffs(diff, versions[k])
+    diffs[k] = diff
 
   print 'Reverting changes'
   changes = []
