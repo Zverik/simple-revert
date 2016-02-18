@@ -11,6 +11,8 @@ are restored as well.
 
     git clone https://github.com/Zverik/simple-revert.git
     cd simple-revert
+    
+Or just press "Download ZIP" button above and unpack the archive.
 
 ## Simple Revert
 
