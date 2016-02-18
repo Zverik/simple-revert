@@ -79,6 +79,7 @@ if __name__ == '__main__':
   # If we fail, revert to a given version blindly
   opener = urllib2.build_opener()
   history = None
+  print 'Downloading history of {0} {1}'.format(obj_type, obj_id)
   try:
     response = opener.open('{0}/{1}/{2}/history'.format(API_ENDPOINT, obj_type, obj_id))
     history = etree.parse(response).getroot()
@@ -135,17 +136,21 @@ if __name__ == '__main__':
     print 'Will not delete the object, use other means.'
     sys.exit(1)
 
-  # Now building a list of changes, traversing all references, finding object to undelete
+  # Now building a list of changes, traversing all references, finding objects to undelete
   obj = obj_to_dict(vref)
   obj['version'] = last_version
   changes = [obj]
   queue = deque()
   processed = {}
   queue.extend(find_new_refs(obj, obj_to_dict(history[-1])))
+  singleref = False
   while len(queue):
     qobj = queue.popleft()
     if qobj in processed:
       continue
+    singleref = True
+    sys.stdout.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(qobj[0], len(queue), len(changes) - 1, ' ' * 10))
+    sys.stdout.flush()
     # Download last version and grab references from it
     try:
       response = opener.open('{0}/{1}/{2}'.format(API_ENDPOINT, qobj[0], qobj[1]))
@@ -168,6 +173,8 @@ if __name__ == '__main__':
         raise e
     queue.extend(find_new_refs(obj))
     processed[(obj['type'], obj['id'])] = True
+  if singleref:
+    print
 
   tags = {
     'created_by': 'restore-version.py',
