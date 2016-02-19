@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-import sys, urllib2
+import sys
 from collections import defaultdict
 from copy import deepcopy
 from urllib import quote
-from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
+from common import obj_to_dict, dict_to_obj, upload_changes, api_download, HTTPError
 
 try:
   from lxml import etree
@@ -42,12 +42,14 @@ def make_diff(obj, obj_prev):
 
     # Keeping references for ways and relations
     if 'refs' in obj and obj_prev['refs'] != obj['refs']:
-      diff.append(('refs', obj_pref['refs'], obj['refs']))
+      diff.append(('refs', obj_prev['refs'], obj['refs']))
 
   return diff
 
 def merge_diffs(diff, diff_newer):
   """Merge two sequential diffs."""
+  if diff is None:
+    return diff_newer
   result = [diff_newer[0]]
   # First, resolve creating and deleting
   if len(diff) == 2 and diff[1][0] == 'create':
@@ -140,12 +142,10 @@ if __name__ == '__main__':
     print 'To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0])
     sys.exit(1)
 
-  opener = urllib2.build_opener()
   if len(sys.argv) == 2 and not sys.argv[1].isdigit():
     # We have a display name, show their changesets
     try:
-      response = opener.open('{0}/changesets?closed=true&display_name={1}'.format(API_ENDPOINT, quote(sys.argv[1])))
-      root = etree.parse(response).getroot()
+      root = api_download('changesets?closed=true&display_name={0}'.format(quote(sys.argv[1])), throw=[404])
       for changeset in root[:15]:
         created_by = '???'
         comment = '<no comment>'
@@ -155,72 +155,74 @@ if __name__ == '__main__':
           elif tag.get('k') == 'comment':
             comment = tag.get('v').encode('utf-8')
         print 'Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment)
-    except urllib2.HTTPError as e:
-      if e.code == 404:
-        print 'No such user found.'
-        sys.exit(2)
-      else:
-        raise e
+    except HTTPError as e:
+      print 'No such user found.'
     sys.exit(0)
 
   changesets = [int(x) for x in sys.argv[1:]]
   ch_users = {}
   diffs = defaultdict(dict)
 
-  print 'Downloading changesets'
   for changeset_id in changesets:
-    try:
-      # Download a changeset
-      response = opener.open('{0}/changeset/{1}/download'.format(API_ENDPOINT, changeset_id))
-      root = etree.parse(response).getroot()
-      # Iterate over each object, download previous version (unless it's creation) and make a diff 
-      for action in root:
-        for obj_xml in action:
-          if changeset_id not in ch_users:
-            ch_users[changeset_id] = obj_xml.get('user')
-          obj = obj_to_dict(obj_xml)
-          if obj['version'] > 1:
-            # Download the previous version
-            response = opener.open('{0}/{1}/{2}/{3}'.format(API_ENDPOINT, obj['type'], obj['id'], obj['version'] - 1))
-            obj_prev = obj_to_dict(etree.parse(response).getroot()[0])
-          else:
-            obj_prev = None
-          diffs[(obj['type'], obj['id'])][obj['version']] = make_diff(obj, obj_prev)
-    except Exception as e:
-      print 'Failed to download changeset {0}: {1}'.format(changeset_id, e)
-      import traceback
-      traceback.print_exc()
-      sys.exit(2)
+    info_str = '\rDownloading changeset {0}'.format(changeset_id)
+    sys.stdout.write(info_str)
+    sys.stdout.flush()
+    root = api_download('changeset/{0}/download'.format(changeset_id),
+        sysexit_message='Failed to download changeset {0}'.format(changeset_id))
+    # Iterate over each object, download previous version (unless it's creation) and make a diff 
+    count = total = 0
+    for action in root:
+      if action.tag != 'create':
+        total += len(action)
+    for action in root:
+      for obj_xml in action:
+        if action.tag != 'create':
+          count += 1
+        if changeset_id not in ch_users:
+          ch_users[changeset_id] = obj_xml.get('user')
+        obj = obj_to_dict(obj_xml)
+        if obj['version'] > 1:
+          sys.stdout.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(info_str, obj['type'], obj['id'], count, total, ' ' * 15))
+          sys.stdout.flush()
+          try:
+            obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
+          except HTTPError:
+            print '\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'.format(obj['version'] - 1, obj['type'], obj['id'])
+            sys.exit(3)
+        else:
+          obj_prev = None
+        diffs[(obj['type'], obj['id'])][obj['version']] = make_diff(obj, obj_prev)
+    print
 
   if not diffs:
     print 'No changes to revert.'
     sys.exit(0)
 
   # merge versions of same objects in diffs
-  for k, versions in diffs.iteritems():
+  for k in diffs:
     diff = None
-    for k in sorted(versions.keys()):
-      if diff is None:
-        diff = versions[k]
-      else:
-        diff = merge_diffs(diff, versions[k])
+    for v in sorted(diffs[k].keys()):
+      diff = merge_diffs(diff, diffs[k][v])
     diffs[k] = diff
 
-  print 'Reverting changes'
+  info_str = '\rReverting changes'
+  sys.stdout.write(info_str)
+  sys.stdout.flush()
   changes = []
-  for obj, change in diffs.iteritems():
+  count = 0
+  for kobj, change in diffs.iteritems():
+    count += 1
+    if change is None:
+      continue
     try:
       # Download the latest version of an object
+      sys.stdout.write('{0}, downloading {1} {2} [{3}/{4}]{5}'.format(info_str, kobj[0], kobj[1], count, len(diffs), ' ' * 15))
+      sys.stdout.flush()
       try:
-        response = opener.open('{0}/{1}/{2}'.format(API_ENDPOINT, obj[0], obj[1]))
-        obj = obj_to_dict(etree.parse(response).getroot()[0])
-      except urllib2.HTTPError as e:
-        if e.code == 410:
-          # Read the full history to get the latest version
-          response = opener.open('{0}/{1}/{2}/history'.format(API_ENDPOINT, obj[0], obj[1]))
-          obj = obj_to_dict(etree.parse(response).getroot()[-1])
-        else:
-          raise e
+        obj = obj_to_dict(api_download('{0}/{1}'.format(kobj[0], kobj[1]), throw=[410])[0])
+      except HTTPError as e:
+        # Read the full history to get the latest version
+        obj = obj_to_dict(api_download('{0}/{1}/history'.format(kobj[0], kobj[1]))[-1])
 
       # Apply the change
       if len(change) == 2 and change[1] == 'create':
@@ -237,8 +239,9 @@ if __name__ == '__main__':
         if obj_new != obj:
           changes.append(obj_new)
     except Exception as e:
-      print 'Failed to download the latest version of {0} {1}: {2}'.format(obj[0], obj[1], e)
+      print '\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e)
       sys.exit(2)
+  print
 
   tags = {
     'created_by': 'simple_revert.py',

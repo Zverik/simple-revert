@@ -10,8 +10,8 @@ except ImportError:
   except ImportError:
     import xml.etree.ElementTree as etree
 
-API_ENDPOINT = 'https://api.openstreetmap.org/api/0.6'
-#API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org/api/0.6'
+API_ENDPOINT = 'https://api.openstreetmap.org'
+#API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org'
 
 # Copied from http://stackoverflow.com/a/3884771/1297601
 class MethodRequest(urllib2.Request):
@@ -85,6 +85,28 @@ def dict_to_obj(obj):
     for member in obj['refs']:
       res.append(etree.Element('member', {'type': member[0], 'ref': member[1], 'role': member[2]}))
   return res
+
+class HTTPError:
+  def __init__(self, e):
+    self.code = e.code
+    self.message = e.read()
+
+def api_download(method, throw=None, sysexit_message=None):
+  """Downloads an XML response from the OSM API. Returns either an Element, or a tuple of (code, message)."""
+  try:
+    try:
+      response = urllib2.urlopen('{0}/api/0.6/{1}'.format(API_ENDPOINT, method))
+      return etree.parse(response).getroot()
+    except urllib2.HTTPError as e:
+      if throw is not None and e.code in throw:
+        raise HTTPError(e)
+      else:
+        raise e
+  except Exception as e:
+    if sysexit_message is not None:
+      print ': '.join((sysexit_message, str(e)))
+      sys.exit(3)
+    raise e
 
 def upload_changes(changes, changeset_tags):
   """Uploads a list of changes as tuples (action, obj_dict)."""

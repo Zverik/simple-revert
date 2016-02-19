@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-import sys, urllib2, re
-from common import obj_to_dict, dict_to_obj, upload_changes, API_ENDPOINT
+import sys, re
+from common import obj_to_dict, upload_changes, api_download, HTTPError
 from collections import deque
 
 try:
@@ -77,29 +77,20 @@ if __name__ == '__main__':
 
   # Download full object history
   # If we fail, revert to a given version blindly
-  opener = urllib2.build_opener()
   history = None
   print 'Downloading history of {0} {1}'.format(obj_type, obj_id)
   try:
-    response = opener.open('{0}/{1}/{2}/history'.format(API_ENDPOINT, obj_type, obj_id))
-    history = etree.parse(response).getroot()
-  except urllib2.HTTPError as e:
-    if e.code in (408, 500, 503, 504):
-      # Failed to read the complete history due to a timeout, read only two versions
-      print 'History is too large to download. Querying the last version only.'
-      history = etree.Element('osm')
-      try :
-        response = opener.open('{0}/{1}/{2}'.format(API_ENDPOINT, obj_type, obj_id))
-        obj = etree.parse(response).getroot()[0]
-        history.append(obj)
-      except urllib2.HTTPError as e:
-        if e.code == 410:
-          print 'To restore a deleted version, we need to know the last version number, and we failed.'
-          sys.exit(2)
-        else:
-          raise e
-    else:
-      raise e
+    history = api_download('{0}/{1}/history'.format(obj_type, obj_id), throw=[408, 500, 503, 504])
+  except HTTPError as e:
+    # Failed to read the complete history due to a timeout, read only two versions
+    print 'History is too large to download. Querying the last version only.'
+    history = etree.Element('osm')
+    try :
+      obj = api_download('{0}/{1}'.format(obj_type, obj_id), throw=[410])[0]
+      history.append(obj)
+    except HTTPError as e:
+      print 'To restore a deleted version, we need to know the last version number, and we failed.'
+      sys.exit(2)
 
   if obj_version is None:
     # Print history and exit
@@ -128,8 +119,7 @@ if __name__ == '__main__':
     if int(h.get('version')) == obj_version:
       vref = h
   if vref is None:
-    response = opener.open('{0}/{1}/{2}/{3}'.format(API_ENDPOINT, obj_type, obj_id, obj_version))
-    vref = etree.parse(response).getroot()[0]
+    vref = api_download('{0}/{1}/{2}'.format(obj_type, obj_id, obj_version))[0]
     history.insert(0, vref)
 
   if vref.get('visible') == 'false':
@@ -153,24 +143,19 @@ if __name__ == '__main__':
     sys.stdout.flush()
     # Download last version and grab references from it
     try:
-      response = opener.open('{0}/{1}/{2}'.format(API_ENDPOINT, qobj[0], qobj[1]))
-      obj = obj_to_dict(etree.parse(response).getroot()[0])
-    except urllib2.HTTPError as e:
-      if e.code == 410:
-        # Found a deleted object, download history and restore
-        response = opener.open('{0}/{1}/{2}/history'.format(API_ENDPOINT, qobj[0], qobj[1]))
-        ohist = etree.parse(response).getroot()
-        i = len(ohist) - 1
-        while i > 0 and ohist[i].get('visible') == 'false':
-          i -= 1
-        if ohist[i].get('visible') != 'true':
-          print 'Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.'
-          sys.exit(3)
-        obj = obj_to_dict(ohist[i])
-        obj['version'] = int(ohist[-1].get('version'))
-        changes.append(obj)
-      else:
-        raise e
+      obj = obj_to_dict(api_download('{0}/{1}'.format(qobj[0], qobj[1]), throw=[410])[0])
+    except HTTPError as e:
+      # Found a deleted object, download history and restore
+      ohist = api_download('{0}/{1}/history'.format(qobj[0], qobj[1]))
+      i = len(ohist) - 1
+      while i > 0 and ohist[i].get('visible') == 'false':
+        i -= 1
+      if ohist[i].get('visible') != 'true':
+        print 'Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.'
+        sys.exit(3)
+      obj = obj_to_dict(ohist[i])
+      obj['version'] = int(ohist[-1].get('version'))
+      changes.append(obj)
     queue.extend(find_new_refs(obj))
     processed[(obj['type'], obj['id'])] = True
   if singleref:
