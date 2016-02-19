@@ -234,8 +234,8 @@ if __name__ == '__main__':
         if obj['deleted']:
           obj_new = change[1][1]
         else:
-          # TODO: do we revert all tags and fields if the object is not deleted?
-          pass
+          # Controversial, but I've decided to replace the object with the old one in this case
+          obj_new = change[1][1]
       else:
         obj_new = apply_diff(change, deepcopy(obj))
 
