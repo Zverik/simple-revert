@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys, re
-from common import obj_to_dict, upload_changes, api_download, HTTPError
+from common import safe_print, obj_to_dict, upload_changes, api_download, HTTPError
 from collections import deque
 
 try:
@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
   obj_type, obj_id, obj_version = parse_url(sys.argv[1])
   if obj_type is None or obj_id is None:
-    print 'Please specify correct object type and id.'
+    safe_print('Please specify correct object type and id.')
     sys.exit(1)
   if len(sys.argv) > 2:
     obj_version = int(sys.argv[2])
@@ -78,18 +78,18 @@ if __name__ == '__main__':
   # Download full object history
   # If we fail, revert to a given version blindly
   history = None
-  print 'Downloading history of {0} {1}'.format(obj_type, obj_id)
+  safe_print('Downloading history of {0} {1}'.format(obj_type, obj_id))
   try:
     history = api_download('{0}/{1}/history'.format(obj_type, obj_id), throw=[408, 500, 503, 504])
-  except HTTPError as e:
+  except HTTPError:
     # Failed to read the complete history due to a timeout, read only two versions
-    print 'History is too large to download. Querying the last version only.'
+    safe_print('History is too large to download. Querying the last version only.')
     history = etree.Element('osm')
     try :
       obj = api_download('{0}/{1}'.format(obj_type, obj_id), throw=[410])[0]
       history.append(obj)
-    except HTTPError as e:
-      print 'To restore a deleted version, we need to know the last version number, and we failed.'
+    except HTTPError:
+      safe_print('To restore a deleted version, we need to know the last version number, and we failed.')
       sys.exit(2)
 
   if obj_version is None:
@@ -104,13 +104,13 @@ if __name__ == '__main__':
 
   if obj_version <= 0 or obj_version >= last_version:
     if last_version == 1:
-      print 'The object has only one version, nothing to restore.'
+      safe_print('The object has only one version, nothing to restore.')
     else:
-      print 'Incorrect version {0}, should be between 1 and {1}.'.format(obj_version, last_version - 1)
+      safe_print('Incorrect version {0}, should be between 1 and {1}.'.format(obj_version, last_version - 1))
     sys.exit(1)
 
   if obj_version < last_version - MAX_DEPTH:
-    print 'Restoring objects more than {0} versions back is blocked.'.format(MAX_DEPTH)
+    safe_print('Restoring objects more than {0} versions back is blocked.'.format(MAX_DEPTH))
     sys.exit(1)
 
   # If we downloaded an incomplete history, add that version
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     history.insert(0, vref)
 
   if vref.get('visible') == 'false':
-    print 'Will not delete the object, use other means.'
+    safe_print('Will not delete the object, use other means.')
     sys.exit(1)
 
   # Now building a list of changes, traversing all references, finding objects to undelete
@@ -139,8 +139,8 @@ if __name__ == '__main__':
     if qobj in processed:
       continue
     singleref = True
-    sys.stdout.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(qobj[0], len(queue), len(changes) - 1, ' ' * 10))
-    sys.stdout.flush()
+    sys.stderr.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(qobj[0], len(queue), len(changes) - 1, ' ' * 10))
+    sys.stderr.flush()
     # Download last version and grab references from it
     try:
       obj = obj_to_dict(api_download('{0}/{1}'.format(qobj[0], qobj[1]), throw=[410])[0])
@@ -151,7 +151,7 @@ if __name__ == '__main__':
       while i > 0 and ohist[i].get('visible') == 'false':
         i -= 1
       if ohist[i].get('visible') != 'true':
-        print 'Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.'
+        safe_print('Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.')
         sys.exit(3)
       obj = obj_to_dict(ohist[i])
       obj['version'] = int(ohist[-1].get('version'))
@@ -159,7 +159,7 @@ if __name__ == '__main__':
     queue.extend(find_new_refs(obj))
     processed[(obj['type'], obj['id'])] = True
   if singleref:
-    print
+    sys.stderr.write('\n')
 
   tags = {
     'created_by': 'restore-version.py',

@@ -3,7 +3,7 @@ import sys
 from collections import defaultdict
 from copy import deepcopy
 from urllib import quote
-from common import obj_to_dict, dict_to_obj, upload_changes, api_download, HTTPError
+from common import safe_print, obj_to_dict, dict_to_obj, upload_changes, api_download, HTTPError
 
 try:
   from lxml import etree
@@ -165,8 +165,8 @@ if __name__ == '__main__':
 
   for changeset_id in changesets:
     info_str = '\rDownloading changeset {0}'.format(changeset_id)
-    sys.stdout.write(info_str)
-    sys.stdout.flush()
+    sys.stderr.write(info_str)
+    sys.stderr.flush()
     root = api_download('changeset/{0}/download'.format(changeset_id),
         sysexit_message='Failed to download changeset {0}'.format(changeset_id))
     # Iterate over each object, download previous version (unless it's creation) and make a diff 
@@ -182,20 +182,20 @@ if __name__ == '__main__':
           ch_users[changeset_id] = obj_xml.get('user')
         obj = obj_to_dict(obj_xml)
         if obj['version'] > 1:
-          sys.stdout.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(info_str, obj['type'], obj['id'], count, total, ' ' * 15))
-          sys.stdout.flush()
+          sys.stderr.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(info_str, obj['type'], obj['id'], count, total, ' ' * 15))
+          sys.stderr.flush()
           try:
             obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
           except HTTPError:
-            print '\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'.format(obj['version'] - 1, obj['type'], obj['id'])
+            safe_print('\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'.format(obj['version'] - 1, obj['type'], obj['id']))
             sys.exit(3)
         else:
           obj_prev = None
         diffs[(obj['type'], obj['id'])][obj['version']] = make_diff(obj, obj_prev)
-    print
+    sys.stderr.write('\n')
 
   if not diffs:
-    print 'No changes to revert.'
+    safe_print('No changes to revert.')
     sys.exit(0)
 
   # merge versions of same objects in diffs
@@ -206,8 +206,8 @@ if __name__ == '__main__':
     diffs[k] = diff
 
   info_str = '\rReverting changes'
-  sys.stdout.write(info_str)
-  sys.stdout.flush()
+  sys.stderr.write(info_str)
+  sys.stderr.flush()
   changes = []
   count = 0
   for kobj, change in diffs.iteritems():
@@ -216,8 +216,8 @@ if __name__ == '__main__':
       continue
     try:
       # Download the latest version of an object
-      sys.stdout.write('{0}, downloading {1} {2} [{3}/{4}]{5}'.format(info_str, kobj[0], kobj[1], count, len(diffs), ' ' * 15))
-      sys.stdout.flush()
+      sys.stderr.write('{0}, downloading {1} {2} [{3}/{4}]{5}'.format(info_str, kobj[0], kobj[1], count, len(diffs), ' ' * 15))
+      sys.stderr.flush()
       try:
         obj = obj_to_dict(api_download('{0}/{1}'.format(kobj[0], kobj[1]), throw=[410])[0])
       except HTTPError as e:
@@ -239,9 +239,9 @@ if __name__ == '__main__':
         if obj_new != obj:
           changes.append(obj_new)
     except Exception as e:
-      print '\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e)
+      safe_print('\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e))
       sys.exit(2)
-  print
+  sys.stderr.write('\n')
 
   tags = {
     'created_by': 'simple_revert.py',

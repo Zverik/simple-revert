@@ -1,6 +1,5 @@
 # Common constants and functions for reverting scripts.
-
-import urllib2, getpass, base64
+import urllib2, getpass, base64, sys
 
 try:
   from lxml import etree
@@ -31,6 +30,12 @@ class MethodRequest(urllib2.Request):
     if self.method:
       return self.method
     return urllib2.Request.get_method(self)
+
+def safe_print(s):
+  if sys.stdout.isatty():
+    print s
+  else:
+    sys.stderr.write(s + '\n')
 
 def read_auth():
   """Read login and password from keyboard, and prepare an basic auth header."""
@@ -104,15 +109,15 @@ def api_download(method, throw=None, sysexit_message=None):
         raise e
   except Exception as e:
     if sysexit_message is not None:
-      print ': '.join((sysexit_message, str(e)))
+      safe_print(': '.join((sysexit_message, str(e))))
       sys.exit(3)
     raise e
 
 def upload_changes(changes, changeset_tags):
   """Uploads a list of changes as tuples (action, obj_dict)."""
   if not changes:
-    print 'No changes to upload.'
-    return
+    sys.stderr.write('No changes to upload.\n')
+    return False
 
   # Set explicit actions for each changed object
   for c in changes:
@@ -133,39 +138,49 @@ def upload_changes(changes, changeset_tags):
 
   changes.sort(key=change_as_key)
 
-  # Now we need the OSM credentials
-  auth_header = read_auth()
-  opener = urllib2.build_opener()
-  opener.addheaders = [('Authorization', auth_header)]
+  if sys.stdout.isatty():
+    # Now we need the OSM credentials
+    auth_header = read_auth()
+    opener = urllib2.build_opener()
+    opener.addheaders = [('Authorization', auth_header)]
 
-  # Create changeset
-  create_xml = etree.Element('osm')
-  ch = etree.SubElement(create_xml, 'changeset')
-  for k, v in changeset_tags.iteritems():
-    ch.append(etree.Element('tag', {'k': k, 'v': v}))
+    # Create changeset
+    create_xml = etree.Element('osm')
+    ch = etree.SubElement(create_xml, 'changeset')
+    for k, v in changeset_tags.iteritems():
+      ch.append(etree.Element('tag', {'k': k, 'v': v}))
 
-  request = MethodRequest(API_ENDPOINT + '/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
-  try:
-    changeset_id = int(opener.open(request).read())
-    print 'Writing to changeset {0}'.format(changeset_id)
-  except Exception as e:
-    print 'Failed to create changeset', e
-    return
+    request = MethodRequest(API_ENDPOINT + '/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
+    try:
+      changeset_id = int(opener.open(request).read())
+      print 'Writing to changeset {0}'.format(changeset_id)
+    except Exception as e:
+      print 'Failed to create changeset', e
+      return False
+  else:
+    changeset_id = None
 
-  # Produce osmChange XML and upload it
+  # Produce osmChange XML and either print or upload it
   osc = etree.Element('osmChange', {'version': '0.6'})
   for c in changes:
     act = etree.SubElement(osc, c['action'])
     el = dict_to_obj(c)
-    el.set('changeset', str(changeset_id))
+    if changeset_id:
+      el.set('changeset', str(changeset_id))
     act.append(el)
 
+  if not sys.stdout.isatty():
+    print etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True)
+    return True
+
+  ok = True
   request = MethodRequest('{0}/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)
   try:
     response = opener.open(request)
   except urllib2.HTTPError as e:
     print 'Server rejected the changeset:', e
   except Exception as e:
+    ok = False
     print 'Failed to upload changetset contents:', e
     # Not returning, since we need to close the changeset
 
@@ -174,3 +189,4 @@ def upload_changes(changes, changeset_tags):
     response = opener.open(request)
   except Exception as e:
     print 'Failed to close changeset (it will close automatically in an hour)', e
+  return ok
