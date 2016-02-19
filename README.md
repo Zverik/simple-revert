@@ -1,11 +1,16 @@
 # Reverting Scripts
 
 Here are two Python scripts that:
+
 * Revert simple OpenStreetMap changesets.
 Way and relation structural changes cannot be reverted, all other changes can.
 For example, if you deleted a lot of objects, or changed many tags at once.
 * Restore an old version of a given object. All of its deleted references
 are restored as well.
+
+If there are no errors, scripts would ask you for OSM login and password (which
+are immediately forgotten) and upload the changes. Alternatively you can redirect
+output to a file and open it in e.g. JOSM for reviewing and uploading.
 
 ## Installation
 
@@ -19,9 +24,6 @@ Or just press "Download ZIP" button above and unpack the archive.
 Specify changeset ids as the `simple-revert` script arguments. E.g.
 
     ./simple-revert.py 12345 12346 12348
-
-If there are no errors, it will ask you for OSM login and password (which
-are immediately forgotten) and upload the changes.
 
 To list recent changesets by a user (e.g. you), specify their name as
 the only argument:
