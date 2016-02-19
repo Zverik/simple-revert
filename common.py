@@ -81,14 +81,16 @@ def dict_to_obj(obj):
   if 'coord' in obj:
     res.set('lon', obj['coord'][0])
     res.set('lat', obj['coord'][1])
-  for k, v in obj['tags'].iteritems():
-    res.append(etree.Element('tag', {'k': k, 'v': v}))
-  if obj['type'] == 'way':
-    for nd in obj['refs']:
-      res.append(etree.Element('nd', {'ref': nd}))
-  elif obj['type'] == 'relation':
-    for member in obj['refs']:
-      res.append(etree.Element('member', {'type': member[0], 'ref': member[1], 'role': member[2]}))
+  if 'tags' in obj:
+    for k, v in obj['tags'].iteritems():
+      res.append(etree.Element('tag', {'k': k, 'v': v}))
+  if not obj['deleted']:
+    if obj['type'] == 'way':
+      for nd in obj['refs']:
+        res.append(etree.Element('nd', {'ref': nd}))
+    elif obj['type'] == 'relation':
+      for member in obj['refs']:
+        res.append(etree.Element('member', {'type': member[0], 'ref': member[1], 'role': member[2]}))
   return res
 
 class HTTPError:

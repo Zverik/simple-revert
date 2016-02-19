@@ -225,17 +225,22 @@ if __name__ == '__main__':
         obj = obj_to_dict(api_download('{0}/{1}/history'.format(kobj[0], kobj[1]))[-1])
 
       # Apply the change
-      if len(change) == 2 and change[1] == 'create':
-        obj_new = { 'type': obj['type'], 'id': obj['id'], 'version': obj['version'], 'deleted': True }
-        changes.append(obj_new)
-      elif len(change) == 2 and change[1] == 'delete':
+      obj_new = None
+      if len(change) == 2 and change[1][0] == 'create':
+        if not obj['deleted']:
+          obj_new = { 'type': obj['type'], 'id': obj['id'], 'deleted': True }
+      elif len(change) == 2 and change[1][0] == 'delete':
         # Restore only if the object is still absent
         if obj['deleted']:
           obj_new = change[1][1]
-          obj_new['version'] = obj['version']
-          changes.append(obj_new)
+        else:
+          # TODO: do we revert all tags and fields if the object is not deleted?
+          pass
       else:
         obj_new = apply_diff(change, deepcopy(obj))
+
+      if obj_new is not None:
+        obj_new['version'] = obj['version']
         if obj_new != obj:
           changes.append(obj_new)
     except Exception as e:
