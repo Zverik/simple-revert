@@ -53,24 +53,28 @@ def merge_diffs(diff, diff_newer):
   result = [diff_newer[0]]
   # First, resolve creating and deleting
   if len(diff) == 2 and diff[1][0] == 'create':
-    if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
-      pass
-    elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
-      pass
-    else:
-      pass
+    if len(diff_newer) == 2 and diff_newer[0][1] == diff[0][1] + 1 and diff_newer[1][0] == 'delete':
+      # A special case: deletion negates creation
+      return None
+    # On creation, return the first diff: reverting it means deleting the object. No options
+    return diff
   elif len(diff) == 2 and diff[1][0] == 'delete':
     if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
-      pass
+      # Deletion and creation basically means changing some fields. Make a proper diff
+      return make_diff(diff_newer[1][1], diff[1][1])
     elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
-      pass
+      # Two deletions, return the earlier one
+      return diff
     else:
-      pass
+      # Undoing deletion will clear any changes from the second diff
+      return diff
   else:
     if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
-      pass
+      # We assume the second change was a simple undeletion, so we ignore it. Not going to delete
+      return diff
     elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
-      pass
+      # This is a tough one. We need to both restore the deleted object and apply a diff on top
+      result.append(('delete', apply_diff(diff, diff_newer[1][1])))
     else:
       # O(n^2) complexity, because diffs are usually small
       for change in diff:
@@ -101,8 +105,8 @@ def merge_diffs(diff, diff_newer):
 
   if len(result) > 1:
     return result
-  # Creations and deletions will cause this exception for now
-  raise Exception('Merging diffs is not supported yet')
+  # We didn't come up with any changes, return empty value
+  return None
 
 def apply_diff(diff, obj):
   """Takes a diff and the last version of the object, and produces an initial object from it."""
