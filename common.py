@@ -1,5 +1,5 @@
 # Common constants and functions for reverting scripts.
-import urllib2, getpass, base64, sys
+import urllib2, getpass, base64, sys, re
 
 try:
   from lxml import etree
@@ -180,7 +180,27 @@ def upload_changes(changes, changeset_tags):
   try:
     response = opener.open(request)
   except urllib2.HTTPError as e:
-    print 'Server rejected the changeset:', e
+    message = e.read()
+    print 'Server rejected the changeset with code {0}: {1}'.format(e.code, message)
+    if e.code == 412:
+      # Find the culprit for a failed precondition
+      m = re.search(r'Node (\d+) is still used by (way|relation)s ([0-9,]+)', message)
+      if m:
+        # Find changeset for the first way or relation that started using that node
+      else:
+        m = re.search(r'(Way|The relation) (\d+) is .+ relations? ([0-9,]+)', message)
+        if m:
+          # Find changeset for the first relation that started using that way or relation
+        else:
+          m = re.search(r'Way (\d+) requires .+ id in \(([0-9,]+\)', message)
+          if m:
+            # Find changeset that deleted at least the first node in the list
+            pass
+          else:
+            m = re.search(r'Relation with id (\d+) .+ due to (\w+) with id (\d+)', message)
+            if m:
+              # Find changeset that added member to that relation
+              pass
   except Exception as e:
     ok = False
     print 'Failed to upload changetset contents:', e
