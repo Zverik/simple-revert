@@ -187,10 +187,12 @@ def upload_changes(changes, changeset_tags):
       m = re.search(r'Node (\d+) is still used by (way|relation)s ([0-9,]+)', message)
       if m:
         # Find changeset for the first way or relation that started using that node
+        pass
       else:
         m = re.search(r'(Way|The relation) (\d+) is .+ relations? ([0-9,]+)', message)
         if m:
           # Find changeset for the first relation that started using that way or relation
+          pass
         else:
           m = re.search(r'Way (\d+) requires .+ id in \(([0-9,]+\)', message)
           if m:

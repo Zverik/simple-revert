@@ -135,6 +135,8 @@ def apply_diff(diff, obj):
     elif change[0] == 'refs':
       if obj['refs'] != change[2]:
         raise Exception('Members for {0} {1} were changed, cannot roll that back'.format(obj['type'], obj['id']))
+      else:
+        obj['refs'] = change[1]
     else:
       raise Exception('Unknown or unprocessed by apply_diff change type: {0}'.format(change[0]))
   return obj
