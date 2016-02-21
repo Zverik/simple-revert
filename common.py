@@ -64,7 +64,7 @@ def obj_to_dict(obj):
   res['version'] = int(obj.get('version'))
   res['deleted'] = obj.get('visible') == 'false'
   if obj.tag == 'node' and 'lon' in obj.keys() and 'lat' in obj.keys():
-    res['coord'] = (obj.get('lon'), obj.get('lat'))
+    res['coords'] = (obj.get('lon'), obj.get('lat'))
   res['tags'] = { tag.get('k') : tag.get('v') for tag in obj.iterchildren('tag')}
   if obj.tag == 'way':
     res['refs'] = [x.get('ref') for x in obj.iterchildren('nd')]
@@ -78,9 +78,9 @@ def dict_to_obj(obj):
     return None
   res = etree.Element(obj['type'], {'id': str(obj['id']), 'version': str(obj['version'])})
   res.set('visible', 'false' if obj['deleted'] else 'true')
-  if 'coord' in obj:
-    res.set('lon', obj['coord'][0])
-    res.set('lat', obj['coord'][1])
+  if 'coords' in obj:
+    res.set('lon', obj['coords'][0])
+    res.set('lat', obj['coords'][1])
   if 'tags' in obj:
     for k, v in obj['tags'].iteritems():
       res.append(etree.Element('tag', {'k': k, 'v': v}))
