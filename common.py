@@ -44,7 +44,7 @@ def read_auth():
     login = raw_input('OSM Login: ')
     auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(login, getpass.getpass('OSM Password: '))))
     try:
-      request = urllib2.Request(API_ENDPOINT + '/user/details')
+      request = urllib2.Request(API_ENDPOINT + '/api/0.6/user/details')
       request.add_header('Authorization', auth_header)
       result = urllib2.urlopen(request)
       ok = 'account_created' in result.read()
@@ -152,7 +152,7 @@ def upload_changes(changes, changeset_tags):
     for k, v in changeset_tags.iteritems():
       ch.append(etree.Element('tag', {'k': k, 'v': v}))
 
-    request = MethodRequest(API_ENDPOINT + '/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
+    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
     try:
       changeset_id = int(opener.open(request).read())
       print 'Writing to changeset {0}'.format(changeset_id)
@@ -176,7 +176,7 @@ def upload_changes(changes, changeset_tags):
     return True
 
   ok = True
-  request = MethodRequest('{0}/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)
+  request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)
   try:
     response = opener.open(request)
   except urllib2.HTTPError as e:
@@ -208,7 +208,7 @@ def upload_changes(changes, changeset_tags):
     print 'Failed to upload changetset contents:', e
     # Not returning, since we need to close the changeset
 
-  request = MethodRequest('{0}/changeset/{1}/close'.format(API_ENDPOINT, changeset_id), method=MethodRequest.PUT)
+  request = MethodRequest('{0}/api/0.6/changeset/{1}/close'.format(API_ENDPOINT, changeset_id), method=MethodRequest.PUT)
   try:
     response = opener.open(request)
   except Exception as e:
