@@ -155,7 +155,7 @@ if __name__ == '__main__':
       for changeset in root[:15]:
         created_by = '???'
         comment = '<no comment>'
-        for tag in changeset.iterchildren('tag'):
+        for tag in changeset.findall('tag'):
           if tag.get('k') == 'created_by':
             created_by = tag.get('v').encode('utf-8')
           elif tag.get('k') == 'comment':

@@ -65,11 +65,11 @@ def obj_to_dict(obj):
   res['deleted'] = obj.get('visible') == 'false'
   if obj.tag == 'node' and 'lon' in obj.keys() and 'lat' in obj.keys():
     res['coords'] = (obj.get('lon'), obj.get('lat'))
-  res['tags'] = { tag.get('k') : tag.get('v') for tag in obj.iterchildren('tag')}
+  res['tags'] = { tag.get('k') : tag.get('v') for tag in obj.findall('tag')}
   if obj.tag == 'way':
-    res['refs'] = [x.get('ref') for x in obj.iterchildren('nd')]
+    res['refs'] = [x.get('ref') for x in obj.findall('nd')]
   elif obj.tag == 'relation':
-    res['refs'] = [(x.get('type'), x.get('ref'), x.get('role')) for x in obj.iterchildren('member')]
+    res['refs'] = [(x.get('type'), x.get('ref'), x.get('role')) for x in obj.findall('member')]
   return res
 
 def dict_to_obj(obj):
@@ -172,7 +172,11 @@ def upload_changes(changes, changeset_tags):
     act.append(el)
 
   if not sys.stdout.isatty():
-    print etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True)
+    try:
+      print etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True)
+    except TypeError:
+      # xml.etree.ElementTree does not support pretty printing
+      print etree.tostring(osc, encoding='utf-8')
     return True
 
   ok = True
