@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
   # If we downloaded an incomplete history, add that version
   vref = None
-  for h in history.iterchildren():
+  for h in history:
     if int(h.get('version')) == obj_version:
       vref = h
   if vref is None:
