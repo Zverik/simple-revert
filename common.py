@@ -98,6 +98,10 @@ class HTTPError:
     self.code = e.code
     self.message = e.read()
 
+class RevertError:
+  def __init__(self, msg):
+    self.message = msg
+
 def api_download(method, throw=None, sysexit_message=None):
   """Downloads an XML response from the OSM API. Returns either an Element, or a tuple of (code, message)."""
   try:
@@ -111,8 +115,7 @@ def api_download(method, throw=None, sysexit_message=None):
         raise e
   except Exception as e:
     if sysexit_message is not None:
-      safe_print(': '.join((sysexit_message, str(e))))
-      sys.exit(3)
+      raise RevertError(': '.join((sysexit_message, str(e))))
     raise e
 
 def upload_changes(changes, changeset_tags):
