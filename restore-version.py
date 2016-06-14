@@ -59,13 +59,13 @@ def find_new_refs(old, last=None):
 
 if __name__ == '__main__':
   if len(sys.argv) < 2:
-    print 'Restores a specific version of a given object, undeleting all missing references'
-    print
-    print 'Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}]'.format(sys.argv[0])
-    print
-    print 'URLs both from osm.org and api.osm.org (even with version) are accepted.'
-    print 'Use -1 to revert last version (e.g. undelete an object).'
-    print 'Omit version number to see an object history.'
+    print('Restores a specific version of a given object, undeleting all missing references')
+    print()
+    print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}]'.format(sys.argv[0]))
+    print()
+    print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
+    print('Use -1 to revert last version (e.g. undelete an object).')
+    print('Omit version number to see an object history.')
     sys.exit(1)
 
   obj_type, obj_id, obj_version = parse_url(sys.argv[1])
@@ -95,7 +95,7 @@ if __name__ == '__main__':
   if obj_version is None:
     # Print history and exit
     for h in history[-MAX_DEPTH-1:]:
-      print 'Version {0}: {1}changeset {2} on {3} by {4}'.format(h.get('version'), 'deleted in ' if h.get('visible') == 'false' else '', h.get('changeset'), h.get('timestamp'), h.get('user').encode('utf-8'))
+      print('Version {0}: {1}changeset {2} on {3} by {4}'.format(h.get('version'), 'deleted in ' if h.get('visible') == 'false' else '', h.get('changeset'), h.get('timestamp'), h.get('user').encode('utf-8')))
     sys.exit(0)
 
   last_version = int(history[-1].get('version'))

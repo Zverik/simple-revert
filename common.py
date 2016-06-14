@@ -9,6 +9,11 @@ except ImportError:
   except ImportError:
     import xml.etree.ElementTree as etree
 
+try:
+  input = raw_input
+except NameError:
+  pass
+
 API_ENDPOINT = 'https://api.openstreetmap.org'
 #API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org'
 
@@ -33,7 +38,7 @@ class MethodRequest(urllib2.Request):
 
 def safe_print(s):
   if sys.stdout.isatty():
-    print s
+    print(s)
   else:
     sys.stderr.write(s + '\n')
 
@@ -41,7 +46,7 @@ def read_auth():
   """Read login and password from keyboard, and prepare an basic auth header."""
   ok = False
   while not ok:
-    login = raw_input('OSM Login: ')
+    login = input('OSM Login: ')
     auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(login, getpass.getpass('OSM Password: '))))
     try:
       request = urllib2.Request(API_ENDPOINT + '/api/0.6/user/details')
@@ -49,9 +54,9 @@ def read_auth():
       result = urllib2.urlopen(request)
       ok = 'account_created' in result.read()
     except Exception as e:
-      print e
+      print(e)
     if not ok:
-      print 'You must have mistyped. Please try again.'
+      print('You must have mistyped. Please try again.')
   return auth_header
 
 def obj_to_dict(obj):
@@ -150,14 +155,15 @@ def upload_changes(changes, changeset_tags):
     create_xml = etree.Element('osm')
     ch = etree.SubElement(create_xml, 'changeset')
     for k, v in changeset_tags.iteritems():
-      ch.append(etree.Element('tag', {'k': k, 'v': v}))
+      print v
+      ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
 
     request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
     try:
       changeset_id = int(opener.open(request).read())
-      print 'Writing to changeset {0}'.format(changeset_id)
+      print('Writing to changeset {0}'.format(changeset_id))
     except Exception as e:
-      print 'Failed to create changeset', e
+      print('Failed to create changeset: {0}'.format(e))
       return False
   else:
     changeset_id = None
@@ -173,10 +179,10 @@ def upload_changes(changes, changeset_tags):
 
   if not sys.stdout.isatty():
     try:
-      print etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True)
+      print(etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True))
     except TypeError:
       # xml.etree.ElementTree does not support pretty printing
-      print etree.tostring(osc, encoding='utf-8')
+      print(etree.tostring(osc, encoding='utf-8'))
     return True
 
   ok = True
@@ -185,7 +191,7 @@ def upload_changes(changes, changeset_tags):
     response = opener.open(request)
   except urllib2.HTTPError as e:
     message = e.read()
-    print 'Server rejected the changeset with code {0}: {1}'.format(e.code, message)
+    print('Server rejected the changeset with code {0}: {1}'.format(e.code, message))
     if e.code == 412:
       # Find the culprit for a failed precondition
       m = re.search(r'Node (\d+) is still used by (way|relation)s ([0-9,]+)', message)
@@ -209,12 +215,12 @@ def upload_changes(changes, changeset_tags):
               pass
   except Exception as e:
     ok = False
-    print 'Failed to upload changetset contents:', e
+    print('Failed to upload changetset contents: {0}'.format(e))
     # Not returning, since we need to close the changeset
 
   request = MethodRequest('{0}/api/0.6/changeset/{1}/close'.format(API_ENDPOINT, changeset_id), method=MethodRequest.PUT)
   try:
     response = opener.open(request)
   except Exception as e:
-    print 'Failed to close changeset (it will close automatically in an hour)', e
+    print('Failed to close changeset (it will close automatically in an hour): {0}'.format(e))
   return ok

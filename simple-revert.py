@@ -78,7 +78,9 @@ def merge_diffs(diff, diff_newer):
     else:
       # O(n^2) complexity, because diffs are usually small
       for change in diff:
-        if change[0] == 'move' or change[0] == 'refs':
+        if change[0] == 'version':
+          pass
+        elif change[0] == 'move' or change[0] == 'refs':
           op_newer = None
           for k in diff_newer:
             if k[0] == change[0]:
@@ -143,9 +145,9 @@ def apply_diff(diff, obj):
 
 if __name__ == '__main__':
   if len(sys.argv) < 2:
-    print 'This script reverts simple OSM changesets. It will tell you if it fails.'
-    print 'Usage: {0} <changeset_id> [<changeset_id> ...]'.format(sys.argv[0])
-    print 'To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0])
+    print('This script reverts simple OSM changesets. It will tell you if it fails.')
+    print('Usage: {0} <changeset_id> [<changeset_id> ...]'.format(sys.argv[0]))
+    print('To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0]))
     sys.exit(1)
 
   if len(sys.argv) == 2 and not sys.argv[1].isdigit():
@@ -160,9 +162,9 @@ if __name__ == '__main__':
             created_by = tag.get('v').encode('utf-8')
           elif tag.get('k') == 'comment':
             comment = tag.get('v').encode('utf-8')
-        print 'Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment)
+        print('Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment))
     except HTTPError as e:
-      print 'No such user found.'
+      print('No such user found.')
     sys.exit(0)
 
   changesets = [int(x) for x in sys.argv[1:]]
@@ -185,7 +187,7 @@ if __name__ == '__main__':
         if action.tag != 'create':
           count += 1
         if changeset_id not in ch_users:
-          ch_users[changeset_id] = obj_xml.get('user')
+          ch_users[changeset_id] = obj_xml.get('user').encode('utf-8')
         obj = obj_to_dict(obj_xml)
         if obj['version'] > 1:
           sys.stderr.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(info_str, obj['type'], obj['id'], count, total, ' ' * 15))
