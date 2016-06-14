@@ -143,35 +143,27 @@ def apply_diff(diff, obj):
       raise Exception('Unknown or unprocessed by apply_diff change type: {0}'.format(change[0]))
   return obj
 
-if __name__ == '__main__':
-  if len(sys.argv) < 2:
-    print('This script reverts simple OSM changesets. It will tell you if it fails.')
-    print('Usage: {0} <changeset_id> [<changeset_id> ...]'.format(sys.argv[0]))
-    print('To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0]))
-    sys.exit(1)
+def print_changesets_for_user(user, limit=15):
+  """Prints last 15 changesets for a user."""
+  try:
+    root = api_download('changesets?closed=true&display_name={0}'.format(quote(user)), throw=[404])
+    for changeset in root[:limit]:
+      created_by = '???'
+      comment = '<no comment>'
+      for tag in changeset.findall('tag'):
+        if tag.get('k') == 'created_by':
+          created_by = tag.get('v').encode('utf-8')
+        elif tag.get('k') == 'comment':
+          comment = tag.get('v').encode('utf-8')
+      print 'Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment)
+  except HTTPError as e:
+    print 'No such user found.'
 
-  if len(sys.argv) == 2 and not sys.argv[1].isdigit():
-    # We have a display name, show their changesets
-    try:
-      root = api_download('changesets?closed=true&display_name={0}'.format(quote(sys.argv[1])), throw=[404])
-      for changeset in root[:15]:
-        created_by = '???'
-        comment = '<no comment>'
-        for tag in changeset.findall('tag'):
-          if tag.get('k') == 'created_by':
-            created_by = tag.get('v').encode('utf-8')
-          elif tag.get('k') == 'comment':
-            comment = tag.get('v').encode('utf-8')
-        print('Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment))
-    except HTTPError as e:
-      print('No such user found.')
-    sys.exit(0)
-
-  changesets = [int(x) for x in sys.argv[1:]]
+def download_changesets(changeset_ids):
+  """Downloads changesets and all their contents from API, returns (diffs, changeset_users) tuple."""
   ch_users = {}
   diffs = defaultdict(dict)
-
-  for changeset_id in changesets:
+  for changeset_id in changeset_ids:
     info_str = '\rDownloading changeset {0}'.format(changeset_id)
     sys.stderr.write(info_str)
     sys.stderr.flush()
@@ -195,17 +187,15 @@ if __name__ == '__main__':
           try:
             obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
           except HTTPError:
-            safe_print('\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'.format(obj['version'] - 1, obj['type'], obj['id']))
-            sys.exit(3)
+            raise RevertError('\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'.format(obj['version'] - 1, obj['type'], obj['id']))
         else:
           obj_prev = None
         diffs[(obj['type'], obj['id'])][obj['version']] = make_diff(obj, obj_prev)
     sys.stderr.write('\n')
+  return diffs, ch_users
 
-  if not diffs:
-    safe_print('No changes to revert.')
-    sys.exit(0)
-
+def revert_changes(diffs):
+  """Actually reverts changes in diffs dict. Returns a changes list for uploading to API."""
   # merge versions of same objects in diffs
   for k in diffs:
     diff = None
@@ -252,12 +242,47 @@ if __name__ == '__main__':
         if obj_new != obj:
           changes.append(obj_new)
     except Exception as e:
-      safe_print('\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e))
-      sys.exit(2)
+      raise RevertError('\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e))
   sys.stderr.write('\n')
+  return changes
+
+if __name__ == '__main__':
+  if len(sys.argv) < 2:
+    print('This script reverts simple OSM changesets. It will tell you if it fails.')
+    print('Usage: {0} <changeset_id> [<changeset_id> ...] ["changeset comment"]'.format(sys.argv[0]))
+    print('To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0]))
+    sys.exit(1)
+
+  if len(sys.argv) == 2 and not sys.argv[1].isdigit():
+    print_changesets_for_user(sys.argv[1])
+    sys.exit(0)
+
+  # Last argument might be a changeset comment
+  ids = sys.argv[1:]
+  comment = None
+  if not ids[-1].isdigit():
+    comment = ids[-1].decode('utf-8')
+    ids.pop()
+  changesets = [int(x) for x in ids]
+
+  try:
+    diffs, ch_users = download_changesets(changesets)
+  except RevertError as e:
+    safe_print(e.message)
+    sys.exit(2)
+
+  if not diffs:
+    safe_print('No changes to revert.')
+    sys.exit(0)
+
+  try:
+    changes = revert_changes(diffs)
+  except RevertError as e:
+    safe_print(e.message)
+    sys.exit(3)
 
   tags = {
     'created_by': 'simple_revert.py',
-    'comment': 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
+    'comment': comment or 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
   }
   upload_changes(changes, tags)
