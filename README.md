@@ -23,17 +23,17 @@ Or just press "Download ZIP" button above and unpack the archive.
 
 Specify changeset ids as the `simple-revert` script arguments. E.g.
 
-    ./simple-revert.py 12345 12346 12348
+    ./simple_revert.py 12345 12346 12348
 
 To list recent changesets by a user (e.g. you), specify their name as
 the only argument:
 
-    ./simple-revert.py Zverik
+    ./simple_revert.py Zverik
 
 ## Restore Version
 
 To restore an old object version, pass its type, id and version to
-`restore-version`. For the first argument you can use following formats:
+`restore_version`. For the first argument you can use following formats:
 
 * `n12345` for a node, `w2342` or `r234234` for ways and relations.
 * `node/12345`, `node.12345` or even `"way 2343"` (note the quotes).
@@ -43,7 +43,7 @@ To restore an old object version, pass its type, id and version to
 Version number should be either a positive integer, or a negative, relative
 to the last version. E.g. this command will revert the last change to a node:
 
-    ./restore-version.py n12345 -1
+    ./restore_version.py n12345 -1
 
 To get a list of recent versions, run the script without a version argument.
 
