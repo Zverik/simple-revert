@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 import re
-from common import safe_print, obj_to_dict, upload_changes, api_download, HTTPError
+from common import obj_to_dict, upload_changes, api_download, changes_to_osc, HTTPError
 from collections import deque
 
 try:
@@ -59,6 +59,10 @@ def find_new_refs(old, last=None):
             if (member[0], member[1]) not in mhash:
                 result.append((member[0], member[1]))
     return result
+
+
+def safe_print(s):
+    sys.stderr.write(s + '\n')
 
 
 if __name__ == '__main__':
@@ -167,8 +171,13 @@ if __name__ == '__main__':
     if singleref:
         sys.stderr.write('\n')
 
-    tags = {
-        'created_by': 'restore-version.py',
-        'comment': 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
-    }
-    upload_changes(changes, tags)
+    if not changes:
+        sys.stderr.write('No changes to upload.\n')
+    elif sys.stdout.isatty():
+        tags = {
+            'created_by': 'restore-version.py',
+            'comment': 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
+        }
+        upload_changes(changes, tags)
+    else:
+        print(changes_to_osc(changes))

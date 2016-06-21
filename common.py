@@ -1,5 +1,5 @@
 # Common constants and functions for reverting scripts.
-import urllib2, getpass, base64, sys, re
+import urllib2, getpass, base64, re
 
 try:
     from lxml import etree
@@ -36,13 +36,6 @@ class MethodRequest(urllib2.Request):
         if self.method:
             return self.method
         return urllib2.Request.get_method(self)
-
-
-def safe_print(s):
-    if sys.stdout.isatty():
-        print(s)
-    else:
-        sys.stderr.write(s + '\n')
 
 
 def read_auth():
@@ -132,12 +125,7 @@ def api_download(method, throw=None, sysexit_message=None):
         raise e
 
 
-def upload_changes(changes, changeset_tags):
-    """Uploads a list of changes as tuples (action, obj_dict)."""
-    if not changes:
-        sys.stderr.write('No changes to upload.\n')
-        return False
-
+def changes_to_osc(changes, changeset_id=None):
     # Set explicit actions for each changed object
     for c in changes:
         if 'version' not in c or c['version'] <= 0:
@@ -157,29 +145,6 @@ def upload_changes(changes, changeset_tags):
 
     changes.sort(key=change_as_key)
 
-    if sys.stdout.isatty():
-        # Now we need the OSM credentials
-        auth_header = read_auth()
-        opener = urllib2.build_opener()
-        opener.addheaders = [('Authorization', auth_header)]
-
-        # Create changeset
-        create_xml = etree.Element('osm')
-        ch = etree.SubElement(create_xml, 'changeset')
-        for k, v in changeset_tags.iteritems():
-            ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
-
-        request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
-        try:
-            changeset_id = int(opener.open(request).read())
-            print('Writing to changeset {0}'.format(changeset_id))
-        except Exception as e:
-            print('Failed to create changeset: {0}'.format(e))
-            return False
-    else:
-        changeset_id = None
-
-    # Produce osmChange XML and either print or upload it
     osc = etree.Element('osmChange', {'version': '0.6'})
     for c in changes:
         act = etree.SubElement(osc, c['action'])
@@ -188,13 +153,38 @@ def upload_changes(changes, changeset_tags):
             el.set('changeset', str(changeset_id))
         act.append(el)
 
-    if not sys.stdout.isatty():
-        try:
-            print(etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True))
-        except TypeError:
-            # xml.etree.ElementTree does not support pretty printing
-            print(etree.tostring(osc, encoding='utf-8'))
-        return True
+    try:
+        return etree.tostring(osc, pretty_print=True, encoding='utf-8', xml_declaration=True)
+    except TypeError:
+        # xml.etree.ElementTree does not support pretty printing
+        return etree.tostring(osc, encoding='utf-8')
+
+
+def upload_changes(changes, changeset_tags):
+    """Uploads a list of changes as tuples (action, obj_dict)."""
+    if not changes:
+        print('No changes to upload.')
+        return False
+
+    # Now we need the OSM credentials
+    auth_header = read_auth()
+    opener = urllib2.build_opener()
+    opener.addheaders = [('Authorization', auth_header)]
+
+    # Create changeset
+    create_xml = etree.Element('osm')
+    ch = etree.SubElement(create_xml, 'changeset')
+    for k, v in changeset_tags.iteritems():
+        ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
+
+    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
+    try:
+        changeset_id = int(opener.open(request).read())
+        print('Writing to changeset {0}'.format(changeset_id))
+    except Exception as e:
+        print('Failed to create changeset: {0}'.format(e))
+        return False
+    osc = changes_to_osc(changes, changeset_id)
 
     ok = True
     request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)

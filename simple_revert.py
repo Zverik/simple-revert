@@ -3,7 +3,7 @@ import sys
 from collections import defaultdict
 from copy import deepcopy
 from urllib import quote
-from common import safe_print, obj_to_dict, upload_changes, api_download, HTTPError, RevertError
+from common import obj_to_dict, upload_changes, api_download, HTTPError, RevertError, changes_to_osc
 
 
 def make_diff(obj, obj_prev):
@@ -151,19 +151,35 @@ def print_changesets_for_user(user, limit=15):
                     created_by = tag.get('v').encode('utf-8')
                 elif tag.get('k') == 'comment':
                     comment = tag.get('v').encode('utf-8')
-            print 'Changeset {0} created on {1} with {2}:\t{3}'.format(changeset.get('id'), changeset.get('created_at'), created_by, comment)
+            print('Changeset {0} created on {1} with {2}:\t{3}'.format(
+                changeset.get('id'), changeset.get('created_at'), created_by, comment))
     except HTTPError:
-        print 'No such user found.'
+        print('No such user found.')
 
 
-def download_changesets(changeset_ids):
+def print_status(changeset_id, obj_type=None, obj_id=None, count=None, total=None):
+    if changeset_id == 'flush':
+        sys.stderr.write('\n')
+    elif changeset_id is not None:
+        info_str = '\rDownloading changeset {0}'.format(changeset_id)
+        if obj_type is None:
+            sys.stderr.write(info_str)
+        else:
+            sys.stderr.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(
+                info_str, obj_type, obj_id, count, total, ' ' * 15))
+    else:
+        info_str = '\rReverting changes'
+        sys.stderr.write('{0}, downloading {1} {2} [{3}/{4}]{5}'.format(
+            info_str, obj_type, obj_id, count, total, ' ' * 15))
+    sys.stderr.flush()
+
+
+def download_changesets(changeset_ids, print_status):
     """Downloads changesets and all their contents from API, returns (diffs, changeset_users) tuple."""
     ch_users = {}
     diffs = defaultdict(dict)
     for changeset_id in changeset_ids:
-        info_str = '\rDownloading changeset {0}'.format(changeset_id)
-        sys.stderr.write(info_str)
-        sys.stderr.flush()
+        print_status(changeset_id)
         root = api_download('changeset/{0}/download'.format(changeset_id),
                             sysexit_message='Failed to download changeset {0}'.format(changeset_id))
         # Iterate over each object, download previous version (unless it's creation) and make a diff
@@ -179,8 +195,7 @@ def download_changesets(changeset_ids):
                     ch_users[changeset_id] = obj_xml.get('user').encode('utf-8')
                 obj = obj_to_dict(obj_xml)
                 if obj['version'] > 1:
-                    sys.stderr.write('{0}, historic version of {1} {2} [{3}/{4}]{5}'.format(info_str, obj['type'], obj['id'], count, total, ' ' * 15))
-                    sys.stderr.flush()
+                    print_status(changeset_id, obj['type'], obj['id'], count, total)
                     try:
                         obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
                     except HTTPError:
@@ -189,11 +204,11 @@ def download_changesets(changeset_ids):
                 else:
                     obj_prev = None
                 diffs[(obj['type'], obj['id'])][obj['version']] = make_diff(obj, obj_prev)
-        sys.stderr.write('\n')
+        print_status('flush')
     return diffs, ch_users
 
 
-def revert_changes(diffs):
+def revert_changes(diffs, print_status):
     """Actually reverts changes in diffs dict. Returns a changes list for uploading to API."""
     # merge versions of same objects in diffs
     for k in diffs:
@@ -202,9 +217,6 @@ def revert_changes(diffs):
             diff = merge_diffs(diff, diffs[k][v])
         diffs[k] = diff
 
-    info_str = '\rReverting changes'
-    sys.stderr.write(info_str)
-    sys.stderr.flush()
     changes = []
     count = 0
     for kobj, change in diffs.iteritems():
@@ -213,8 +225,7 @@ def revert_changes(diffs):
             continue
         try:
             # Download the latest version of an object
-            sys.stderr.write('{0}, downloading {1} {2} [{3}/{4}]{5}'.format(info_str, kobj[0], kobj[1], count, len(diffs), ' ' * 15))
-            sys.stderr.flush()
+            print_status(None, kobj[0], kobj[1], count, len(diffs))
             try:
                 obj = obj_to_dict(api_download('{0}/{1}'.format(kobj[0], kobj[1]), throw=[410])[0])
             except HTTPError as e:
@@ -242,7 +253,7 @@ def revert_changes(diffs):
                     changes.append(obj_new)
         except Exception as e:
             raise RevertError('\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e))
-    sys.stderr.write('\n')
+    print_status('flush')
     return changes
 
 
@@ -266,23 +277,28 @@ if __name__ == '__main__':
     changesets = [int(x) for x in ids]
 
     try:
-        diffs, ch_users = download_changesets(changesets)
+        diffs, ch_users = download_changesets(changesets, print_status)
     except RevertError as e:
-        safe_print(e.message)
+        sys.stderr.write(e.message + '\n')
         sys.exit(2)
 
     if not diffs:
-        safe_print('No changes to revert.')
+        sys.stderr.write('No changes to revert.\n')
         sys.exit(0)
 
     try:
-        changes = revert_changes(diffs)
+        changes = revert_changes(diffs, print_status)
     except RevertError as e:
-        safe_print(e.message)
+        sys.stderr.write(e.message + '\n')
         sys.exit(3)
 
-    tags = {
-        'created_by': 'simple_revert.py',
-        'comment': comment or 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
-    }
-    upload_changes(changes, tags)
+    if not changes:
+        sys.stderr.write('No changes to upload.\n')
+    elif sys.stdout.isatty():
+        tags = {
+            'created_by': 'simple_revert.py',
+            'comment': comment or 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
+        }
+        upload_changes(changes, tags)
+    else:
+        print(changes_to_osc(changes))
