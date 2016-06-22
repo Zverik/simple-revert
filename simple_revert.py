@@ -92,6 +92,8 @@ def merge_diffs(diff, diff_newer):
                             op_newer = k
                     if op_newer is None:
                         result.append(change)
+                    elif change[2] == op_newer[3]:
+                        pass  # Tag value was reverted
                     elif change[3] == op_newer[2]:
                         result.append(('tag', change[1], change[2], op_newer[3]))
                     else:
