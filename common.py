@@ -160,6 +160,14 @@ def changes_to_osc(changes, changeset_id=None):
         return etree.tostring(osc, encoding='utf-8')
 
 
+def changeset_xml(changeset_tags):
+    create_xml = etree.Element('osm')
+    ch = etree.SubElement(create_xml, 'changeset')
+    for k, v in changeset_tags.iteritems():
+        ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
+    return etree.tostring(create_xml)
+
+
 def upload_changes(changes, changeset_tags):
     """Uploads a list of changes as tuples (action, obj_dict)."""
     if not changes:
@@ -171,13 +179,7 @@ def upload_changes(changes, changeset_tags):
     opener = urllib2.build_opener()
     opener.addheaders = [('Authorization', auth_header)]
 
-    # Create changeset
-    create_xml = etree.Element('osm')
-    ch = etree.SubElement(create_xml, 'changeset')
-    for k, v in changeset_tags.iteritems():
-        ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
-
-    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', etree.tostring(create_xml), method=MethodRequest.PUT)
+    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', changeset_xml(changeset_tags), method=MethodRequest.PUT)
     try:
         changeset_id = int(opener.open(request).read())
         print('Writing to changeset {0}'.format(changeset_id))
@@ -187,7 +189,7 @@ def upload_changes(changes, changeset_tags):
     osc = changes_to_osc(changes, changeset_id)
 
     ok = True
-    request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), etree.tostring(osc), method=MethodRequest.POST)
+    request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), osc, method=MethodRequest.POST)
     try:
         opener.open(request)
     except urllib2.HTTPError as e:
