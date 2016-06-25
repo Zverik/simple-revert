@@ -71,10 +71,13 @@ def merge_diffs(diff, diff_newer):
             result.append(('delete', apply_diff(diff, diff_newer[1][1])))
         else:
             # O(n^2) complexity, because diffs are usually small
+            moved = False
+            tags = set()
             for change in diff:
                 if change[0] == 'version':
                     pass
                 elif change[0] == 'move' or change[0] == 'refs':
+                    moved = True
                     op_newer = None
                     for k in diff_newer:
                         if k[0] == change[0]:
@@ -86,6 +89,7 @@ def merge_diffs(diff, diff_newer):
                     else:
                         result.append(op_newer)
                 elif change[0] == 'tag':
+                    tags.add(change[1])
                     op_newer = None
                     for k in diff_newer:
                         if k[0] == 'tag' and k[1] == change[1]:
@@ -100,6 +104,12 @@ def merge_diffs(diff, diff_newer):
                         result.append(op_newer)
                 else:
                     raise Exception('Missing processor for merging {0} operation'.format(change[0]))
+            # Process changes from diff_newer
+            for op_newer in diff_newer:
+                if op_newer[0] == 'move' and not moved:
+                    result.append(op_newer)
+                elif op_newer[0] == 'tag' and op_newer[1] not in tags:
+                    result.append(op_newer)
 
     if len(result) > 1:
         return result
@@ -199,7 +209,8 @@ def download_changesets(changeset_ids, print_status):
                 if obj['version'] > 1:
                     print_status(changeset_id, obj['type'], obj['id'], count, total)
                     try:
-                        obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
+                        obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(
+                            obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
                     except HTTPError:
                         msg = '\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'
                         raise RevertError(msg.format(obj['version'] - 1, obj['type'], obj['id']))
