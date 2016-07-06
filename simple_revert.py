@@ -239,11 +239,7 @@ def revert_changes(diffs, print_status):
         try:
             # Download the latest version of an object
             print_status(None, kobj[0], kobj[1], count, len(diffs))
-            try:
-                obj = obj_to_dict(api_download('{0}/{1}'.format(kobj[0], kobj[1]), throw=[410])[0])
-            except HTTPError as e:
-                # Read the full history to get the latest version
-                obj = obj_to_dict(api_download('{0}/{1}/history'.format(kobj[0], kobj[1]))[-1])
+            obj = obj_to_dict(api_download('{0}s?{0}s={1}'.format(kobj[0], kobj[1]))[0])
 
             # Apply the change
             obj_new = None
