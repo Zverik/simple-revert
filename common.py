@@ -62,7 +62,7 @@ def obj_to_dict(obj):
         return None
     res = {}
     res['type'] = obj.tag
-    res['id'] = int(obj.get('id'))
+    res['id'] = obj.get('id')
     res['version'] = int(obj.get('version'))
     res['deleted'] = obj.get('visible') == 'false'
     if obj.tag == 'node' and 'lon' in obj.keys() and 'lat' in obj.keys():
