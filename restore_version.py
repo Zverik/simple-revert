@@ -166,7 +166,7 @@ if __name__ == '__main__':
             obj = obj_to_dict(ohist[i])
             obj['version'] = int(ohist[-1].get('version'))
             changes.append(obj)
-        queue.extend(find_new_refs(obj))
+            queue.extend(find_new_refs(obj))
         processed[(obj['type'], obj['id'])] = True
     if singleref:
         sys.stderr.write('\n')
