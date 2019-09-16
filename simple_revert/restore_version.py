@@ -1,7 +1,6 @@
-#!/usr/bin/env python
 import sys
 import re
-from common import obj_to_dict, upload_changes, api_download, changes_to_osc, HTTPError
+from .common import obj_to_dict, upload_changes, api_download, changes_to_osc, HTTPError
 from collections import deque
 
 try:
@@ -65,7 +64,7 @@ def safe_print(s):
     sys.stderr.write(s + '\n')
 
 
-if __name__ == '__main__':
+def restore_main():
     if len(sys.argv) < 2:
         print('Restores a specific version of a given object, undeleting all missing references')
         print()
@@ -88,7 +87,8 @@ if __name__ == '__main__':
     history = None
     safe_print('Downloading history of {0} {1}'.format(obj_type, obj_id))
     try:
-        history = api_download('{0}/{1}/history'.format(obj_type, obj_id), throw=[408, 500, 503, 504])
+        history = api_download('{0}/{1}/history'.format(obj_type, obj_id),
+                               throw=[408, 500, 503, 504])
     except HTTPError:
         # Failed to read the complete history due to a timeout, read only two versions
         safe_print('History is too large to download. Querying the last version only.')
@@ -97,7 +97,8 @@ if __name__ == '__main__':
             obj = api_download('{0}/{1}'.format(obj_type, obj_id), throw=[410])[0]
             history.append(obj)
         except HTTPError:
-            safe_print('To restore a deleted version, we need to know the last version number, and we failed.')
+            safe_print('To restore a deleted version, we need to know the last ' +
+                       'version number, and we failed.')
             sys.exit(2)
 
     if obj_version is None:
@@ -105,7 +106,7 @@ if __name__ == '__main__':
         for h in history[-MAX_DEPTH-1:]:
             print('Version {0}: {1}changeset {2} on {3} by {4}'.format(
                 h.get('version'), 'deleted in ' if h.get('visible') == 'false' else '',
-                h.get('changeset'), h.get('timestamp'), h.get('user').encode('utf-8')))
+                h.get('changeset'), h.get('timestamp'), h.get('user')))
         sys.exit(0)
 
     last_version = int(history[-1].get('version'))
@@ -116,7 +117,8 @@ if __name__ == '__main__':
         if last_version == 1:
             safe_print('The object has only one version, nothing to restore.')
         else:
-            safe_print('Incorrect version {0}, should be between 1 and {1}.'.format(obj_version, last_version - 1))
+            safe_print('Incorrect version {0}, should be between 1 and {1}.'.format(
+                obj_version, last_version - 1))
         sys.exit(1)
 
     if obj_version < last_version - MAX_DEPTH:
@@ -149,7 +151,8 @@ if __name__ == '__main__':
         if qobj in processed:
             continue
         singleref = True
-        sys.stderr.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(qobj[0], len(queue), len(changes) - 1, ' ' * 10))
+        sys.stderr.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(
+            qobj[0], len(queue), len(changes) - 1, ' ' * 10))
         sys.stderr.flush()
         # Download last version and grab references from it
         try:
@@ -161,7 +164,8 @@ if __name__ == '__main__':
             while i > 0 and ohist[i].get('visible') == 'false':
                 i -= 1
             if ohist[i].get('visible') != 'true':
-                safe_print('Could not find a non-deleted version of {0} {1}, referenced by the object. Sorry.')
+                safe_print('Could not find a non-deleted version of {0} {1}, ' +
+                           'referenced by the object. Sorry.')
                 sys.exit(3)
             obj = obj_to_dict(ohist[i])
             obj['version'] = int(ohist[-1].get('version'))
@@ -181,3 +185,7 @@ if __name__ == '__main__':
         upload_changes(changes, tags)
     else:
         print(changes_to_osc(changes))
+
+
+if __name__ == '__main__':
+    restore_main()

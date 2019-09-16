@@ -1,5 +1,10 @@
 # Common constants and functions for reverting scripts.
-import urllib2, getpass, base64, re
+from urllib.request import Request
+from urllib.request import urlopen
+from urllib.error import URLError
+import getpass
+import base64
+import re
 
 try:
     from lxml import etree
@@ -9,33 +14,22 @@ except ImportError:
     except ImportError:
         import xml.etree.ElementTree as etree
 
-try:
-    input = raw_input
-except NameError:
-    pass
-
 API_ENDPOINT = 'https://api.openstreetmap.org'
 # API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org'
 
 
 # Copied from http://stackoverflow.com/a/3884771/1297601
-class MethodRequest(urllib2.Request):
+class MethodRequest(Request):
     """A subclass to override Request method and content type."""
     GET = 'GET'
     POST = 'POST'
     PUT = 'PUT'
     DELETE = 'DELETE'
 
-    def __init__(self, url, data=None, headers={},
-                 origin_req_host=None, unverifiable=False, method=None):
+    def __init__(self, url, data=None, headers={}, method=None):
         headers['Content-Type'] = 'application/xml'
-        urllib2.Request.__init__(self, url, data, headers, origin_req_host, unverifiable)
+        super().__init__(url, data, headers=headers, method=method)
         self.method = method
-
-    def get_method(self):
-        if self.method:
-            return self.method
-        return urllib2.Request.get_method(self)
 
 
 def read_auth():
@@ -43,11 +37,13 @@ def read_auth():
     ok = False
     while not ok:
         login = input('OSM Login: ')
-        auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(login, getpass.getpass('OSM Password: '))))
+        auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(
+            login, getpass.getpass('OSM Password: ')).encode('utf-8')))
         try:
-            request = urllib2.Request(API_ENDPOINT + '/api/0.6/user/details')
-            request.add_header('Authorization', auth_header)
-            result = urllib2.urlopen(request)
+            request = Request(API_ENDPOINT + '/api/0.6/user/details',
+                              headers={'Authorization': auth_header})
+            result = urlopen(request)
+            print(result.read())
             ok = 'account_created' in result.read()
         except Exception as e:
             print(e)
@@ -93,7 +89,9 @@ def dict_to_obj(obj):
                 res.append(etree.Element('nd', {'ref': nd}))
         elif obj['type'] == 'relation':
             for member in obj['refs']:
-                res.append(etree.Element('member', {'type': member[0], 'ref': member[1], 'role': member[2]}))
+                res.append(etree.Element('member', {'type': member[0],
+                                                    'ref': member[1],
+                                                    'role': member[2]}))
     return res
 
 
@@ -109,12 +107,13 @@ class RevertError:
 
 
 def api_download(method, throw=None, sysexit_message=None):
-    """Downloads an XML response from the OSM API. Returns either an Element, or a tuple of (code, message)."""
+    """Downloads an XML response from the OSM API.
+    Returns either an Element, or a tuple of (code, message)."""
     try:
         try:
-            response = urllib2.urlopen('{0}/api/0.6/{1}'.format(API_ENDPOINT, method))
+            response = urlopen('{0}/api/0.6/{1}'.format(API_ENDPOINT, method))
             return etree.parse(response).getroot()
-        except urllib2.HTTPError as e:
+        except URLError as e:
             if throw is not None and e.code in throw:
                 raise HTTPError(e)
             else:
@@ -176,12 +175,14 @@ def upload_changes(changes, changeset_tags):
 
     # Now we need the OSM credentials
     auth_header = read_auth()
-    opener = urllib2.build_opener()
-    opener.addheaders = [('Authorization', auth_header)]
+    headers = [('Authorization', auth_header)]
 
-    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create', changeset_xml(changeset_tags), method=MethodRequest.PUT)
+    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create',
+                            changeset_xml(changeset_tags),
+                            headers=headers,
+                            method=MethodRequest.PUT)
     try:
-        changeset_id = int(opener.open(request).read())
+        changeset_id = int(urlopen(request).read())
         print('Writing to changeset {0}'.format(changeset_id))
     except Exception as e:
         print('Failed to create changeset: {0}'.format(e))
@@ -189,10 +190,11 @@ def upload_changes(changes, changeset_tags):
     osc = changes_to_osc(changes, changeset_id)
 
     ok = True
-    request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(API_ENDPOINT, changeset_id), osc, method=MethodRequest.POST)
+    request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(
+        API_ENDPOINT, changeset_id), osc, headers=headers, method=MethodRequest.POST)
     try:
-        opener.open(request)
-    except urllib2.HTTPError as e:
+        urlopen(request)
+    except URLError as e:
         message = e.read()
         print('Server rejected the changeset with code {0}: {1}'.format(e.code, message))
         if e.code == 412:
@@ -212,7 +214,8 @@ def upload_changes(changes, changeset_tags):
                         # Find changeset that deleted at least the first node in the list
                         pass
                     else:
-                        m = re.search(r'Relation with id (\d+) .+ due to (\w+) with id (\d+)', message)
+                        m = re.search(r'Relation with id (\d+) .+ due to (\w+) with id (\d+)',
+                                      message)
                         if m:
                             # Find changeset that added member to that relation
                             pass
@@ -221,9 +224,10 @@ def upload_changes(changes, changeset_tags):
         print('Failed to upload changetset contents: {0}'.format(e))
         # Not returning, since we need to close the changeset
 
-    request = MethodRequest('{0}/api/0.6/changeset/{1}/close'.format(API_ENDPOINT, changeset_id), method=MethodRequest.PUT)
+    request = MethodRequest('{0}/api/0.6/changeset/{1}/close'.format(
+        API_ENDPOINT, changeset_id), headers=headers, method=MethodRequest.PUT)
     try:
-        opener.open(request)
+        urlopen(request)
     except Exception as e:
         print('Failed to close changeset (it will close automatically in an hour): {0}'.format(e))
     return ok

@@ -1,9 +1,9 @@
-#!/usr/bin/env python
 import sys
 from collections import defaultdict
 from copy import deepcopy
-from urllib import quote
-from common import obj_to_dict, upload_changes, api_download, HTTPError, RevertError, changes_to_osc
+from urllib.parse import quote
+from .common import (obj_to_dict, upload_changes, api_download,
+                     HTTPError, RevertError, changes_to_osc)
 
 
 def make_diff(obj, obj_prev):
@@ -47,7 +47,8 @@ def merge_diffs(diff, diff_newer):
     result = [diff_newer[0]]
     # First, resolve creating and deleting
     if len(diff) == 2 and diff[1][0] == 'create':
-        if len(diff_newer) == 2 and diff_newer[0][1] == diff[0][1] + 1 and diff_newer[1][0] == 'delete':
+        if (len(diff_newer) == 2 and diff_newer[0][1] == diff[0][1] + 1 and
+                diff_newer[1][0] == 'delete'):
             # A special case: deletion negates creation
             return None
         # On creation, return the first diff: reverting it means deleting the object. No options
@@ -64,10 +65,12 @@ def merge_diffs(diff, diff_newer):
             return diff
     else:
         if len(diff_newer) == 2 and diff_newer[1][0] == 'create':
-            # We assume the second change was a simple undeletion, so we ignore it. Not going to delete
+            # We assume the second change was a simple undeletion, so we ignore it.
+            # Not going to delete
             return diff
         elif len(diff_newer) == 2 and diff_newer[1][0] == 'delete':
-            # This is a tough one. We need to both restore the deleted object and apply a diff on top
+            # This is a tough one. We need to both restore the deleted object
+            # and apply a diff on top
             result.append(('delete', apply_diff(diff, diff_newer[1][1])))
         else:
             # O(n^2) complexity, because diffs are usually small
@@ -143,26 +146,29 @@ def apply_diff(diff, obj):
                     obj['tags'][change[1]] = change[2]
         elif change[0] == 'refs':
             if obj['refs'] != change[2]:
-                raise Exception('Members for {0} {1} were changed, cannot roll that back'.format(obj['type'], obj['id']))
+                raise Exception('Members for {0} {1} were changed, cannot roll that back'.format(
+                    obj['type'], obj['id']))
             else:
                 obj['refs'] = change[1]
         else:
-            raise Exception('Unknown or unprocessed by apply_diff change type: {0}'.format(change[0]))
+            raise Exception('Unknown or unprocessed by apply_diff change type: {0}'.format(
+                change[0]))
     return obj
 
 
 def print_changesets_for_user(user, limit=15):
     """Prints last 15 changesets for a user."""
     try:
-        root = api_download('changesets?closed=true&display_name={0}'.format(quote(user)), throw=[404])
+        root = api_download('changesets?closed=true&display_name={0}'.format(
+            quote(user)), throw=[404])
         for changeset in root[:limit]:
             created_by = '???'
             comment = '<no comment>'
             for tag in changeset.findall('tag'):
                 if tag.get('k') == 'created_by':
-                    created_by = tag.get('v').encode('utf-8')
+                    created_by = tag.get('v')
                 elif tag.get('k') == 'comment':
-                    comment = tag.get('v').encode('utf-8')
+                    comment = tag.get('v')
             print('Changeset {0} created on {1} with {2}:\t{3}'.format(
                 changeset.get('id'), changeset.get('created_at'), created_by, comment))
     except HTTPError:
@@ -187,7 +193,8 @@ def print_status(changeset_id, obj_type=None, obj_id=None, count=None, total=Non
 
 
 def download_changesets(changeset_ids, print_status):
-    """Downloads changesets and all their contents from API, returns (diffs, changeset_users) tuple."""
+    """Downloads changesets and all their contents from API,
+    returns (diffs, changeset_users) tuple."""
     ch_users = {}
     diffs = defaultdict(dict)
     for changeset_id in changeset_ids:
@@ -204,7 +211,7 @@ def download_changesets(changeset_ids, print_status):
                 if action.tag != 'create':
                     count += 1
                 if changeset_id not in ch_users:
-                    ch_users[changeset_id] = obj_xml.get('user').encode('utf-8')
+                    ch_users[changeset_id] = obj_xml.get('user')
                 obj = obj_to_dict(obj_xml)
                 if obj['version'] > 1:
                     print_status(changeset_id, obj['type'], obj['id'], count, total)
@@ -212,7 +219,8 @@ def download_changesets(changeset_ids, print_status):
                         obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(
                             obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
                     except HTTPError:
-                        msg = '\nCannot revert redactions, see version {0} at https://openstreetmap.org/{1}/{2}/history'
+                        msg = ('\nCannot revert redactions, see version {0} at ' +
+                               'https://openstreetmap.org/{1}/{2}/history')
                         raise RevertError(msg.format(obj['version'] - 1, obj['type'], obj['id']))
                 else:
                     obj_prev = None
@@ -251,7 +259,8 @@ def revert_changes(diffs, print_status):
                 if obj['deleted']:
                     obj_new = change[1][1]
                 else:
-                    # Controversial, but I've decided to replace the object with the old one in this case
+                    # Controversial, but I've decided to replace the object
+                    # with the old one in this case
                     obj_new = change[1][1]
             else:
                 obj_new = apply_diff(change, deepcopy(obj))
@@ -261,15 +270,17 @@ def revert_changes(diffs, print_status):
                 if obj_new != obj:
                     changes.append(obj_new)
         except Exception as e:
-            raise RevertError('\nFailed to download the latest version of {0} {1}: {2}'.format(kobj[0], kobj[1], e))
+            raise RevertError('\nFailed to download the latest version of {0} {1}: {2}'.format(
+                kobj[0], kobj[1], e))
     print_status('flush')
     return changes
 
 
-if __name__ == '__main__':
+def main():
     if len(sys.argv) < 2:
         print('This script reverts simple OSM changesets. It will tell you if it fails.')
-        print('Usage: {0} <changeset_id> [<changeset_id> ...] ["changeset comment"]'.format(sys.argv[0]))
+        print('Usage: {0} <changeset_id> [<changeset_id> ...] ["changeset comment"]'.format(
+            sys.argv[0]))
         print('To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0]))
         sys.exit(1)
 
@@ -306,8 +317,13 @@ if __name__ == '__main__':
     elif sys.stdout.isatty():
         tags = {
             'created_by': 'simple_revert.py',
-            'comment': comment or 'Reverting {0}'.format(', '.join(['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
+            'comment': comment or 'Reverting {0}'.format(', '.join(
+                ['{0} by {1}'.format(str(x), ch_users[x]) for x in changesets]))
         }
         upload_changes(changes, tags)
     else:
         print(changes_to_osc(changes))
+
+
+if __name__ == '__main__':
+    main()
