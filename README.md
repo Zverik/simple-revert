@@ -14,21 +14,18 @@ output to a file and open it in e.g. JOSM for reviewing and uploading.
 
 ## Installation
 
-    git clone https://github.com/Zverik/simple-revert.git
-    cd simple-revert
-    
-Or just press "Download ZIP" button above and unpack the archive.
+    pip install --user simple_revert
 
 ## Simple Revert
 
 Specify changeset ids as the `simple-revert` script arguments. E.g.
 
-    ./simple_revert.py 12345 12346 12348
+    simple_revert 12345 12346 12348
 
 To list recent changesets by a user (e.g. you), specify their name as
 the only argument:
 
-    ./simple_revert.py Zverik
+    simple_revert Zverik
 
 ## Restore Version
 
@@ -43,10 +40,10 @@ To restore an old object version, pass its type, id and version to
 Version number should be either a positive integer, or a negative, relative
 to the last version. E.g. this command will revert the last change to a node:
 
-    ./restore_version.py n12345 -1
+    restore_version n12345 -1
 
 To get a list of recent versions, run the script without a version argument.
 
 ## Author and License
 
-Written by Ilya Zverev, licensed WTFPL.
+Written by Ilya Zverev, licensed under ISC license.
