@@ -1,10 +1,9 @@
 # Common constants and functions for reverting scripts.
-from urllib.request import Request
-from urllib.request import urlopen
-from urllib.error import URLError
 import getpass
 import base64
+import logging
 import re
+import requests
 
 try:
     from lxml import etree
@@ -13,23 +12,48 @@ except ImportError:
         import xml.etree.cElementTree as etree
     except ImportError:
         import xml.etree.ElementTree as etree
+try:
+    input = raw_input
+except NameError:
+    pass
 
-API_ENDPOINT = 'https://api.openstreetmap.org'
-# API_ENDPOINT = 'http://master.apis.dev.openstreetmap.org'
+API_ENDPOINT = 'https://api.openstreetmap.org/api/0.6/'
 
 
-# Copied from http://stackoverflow.com/a/3884771/1297601
-class MethodRequest(Request):
-    """A subclass to override Request method and content type."""
-    GET = 'GET'
-    POST = 'POST'
-    PUT = 'PUT'
-    DELETE = 'DELETE'
+class HTTPError(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
 
-    def __init__(self, url, data=None, headers={}, method=None):
-        headers['Content-Type'] = 'application/xml'
-        super().__init__(url, data, headers=headers, method=method)
-        self.method = method
+    def __str__(self):
+        return 'HTTPError({}, {})'.format(self.code, self.message)
+
+
+class RevertError(Exception):
+    def __init__(self, msg):
+        self.message = msg
+
+    def __str__(self):
+        return 'RevertError({})'.format(self.message)
+
+
+def api_request(endpoint, method='GET', sysexit_message=None,
+                raw_result=False, headers=None, **kwargs):
+    if not headers:
+        headers = {}
+    headers['Content-Type'] = 'application/xml'
+    try:
+        resp = requests.request(method, API_ENDPOINT + endpoint, headers=headers, **kwargs)
+        resp.encoding = 'utf-8'
+        if resp.status_code != 200:
+            raise HTTPError(resp.status_code, resp.text)
+        if resp.content and not raw_result:
+            return etree.fromstring(resp.content)
+    except Exception as e:
+        if sysexit_message is not None:
+            raise RevertError(': '.join((sysexit_message, str(e))))
+        raise e
+    return resp.text
 
 
 def read_auth():
@@ -38,17 +62,14 @@ def read_auth():
     while not ok:
         login = input('OSM Login: ')
         auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(
-            login, getpass.getpass('OSM Password: ')).encode('utf-8')))
+            login, getpass.getpass('OSM Password: ')).encode('utf-8')).decode('utf-8'))
         try:
-            request = Request(API_ENDPOINT + '/api/0.6/user/details',
-                              headers={'Authorization': auth_header})
-            result = urlopen(request)
-            print(result.read())
-            ok = 'account_created' in result.read()
+            result = api_request('user/details', headers={'Authorization': auth_header})
+            ok = len(result) > 0
         except Exception as e:
-            print(e)
+            logging.error(e)
         if not ok:
-            print('You must have mistyped. Please try again.')
+            logging.warning('You must have mistyped. Please try again.')
     return auth_header
 
 
@@ -81,7 +102,7 @@ def dict_to_obj(obj):
         res.set('lon', obj['coords'][0])
         res.set('lat', obj['coords'][1])
     if 'tags' in obj:
-        for k, v in obj['tags'].iteritems():
+        for k, v in obj['tags'].items():
             res.append(etree.Element('tag', {'k': k, 'v': v}))
     if not obj['deleted']:
         if obj['type'] == 'way':
@@ -93,35 +114,6 @@ def dict_to_obj(obj):
                                                     'ref': member[1],
                                                     'role': member[2]}))
     return res
-
-
-class HTTPError:
-    def __init__(self, e):
-        self.code = e.code
-        self.message = e.read()
-
-
-class RevertError:
-    def __init__(self, msg):
-        self.message = msg
-
-
-def api_download(method, throw=None, sysexit_message=None):
-    """Downloads an XML response from the OSM API.
-    Returns either an Element, or a tuple of (code, message)."""
-    try:
-        try:
-            response = urlopen('{0}/api/0.6/{1}'.format(API_ENDPOINT, method))
-            return etree.parse(response).getroot()
-        except URLError as e:
-            if throw is not None and e.code in throw:
-                raise HTTPError(e)
-            else:
-                raise e
-    except Exception as e:
-        if sysexit_message is not None:
-            raise RevertError(': '.join((sysexit_message, str(e))))
-        raise e
 
 
 def changes_to_osc(changes, changeset_id=None):
@@ -162,72 +154,71 @@ def changes_to_osc(changes, changeset_id=None):
 def changeset_xml(changeset_tags):
     create_xml = etree.Element('osm')
     ch = etree.SubElement(create_xml, 'changeset')
-    for k, v in changeset_tags.iteritems():
-        ch.append(etree.Element('tag', {'k': k, 'v': v.decode('utf-8')}))
+    for k, v in changeset_tags.items():
+        ch.append(etree.Element('tag', {'k': k, 'v': v}))
     return etree.tostring(create_xml)
 
 
 def upload_changes(changes, changeset_tags):
     """Uploads a list of changes as tuples (action, obj_dict)."""
     if not changes:
-        print('No changes to upload.')
+        logging.info('No changes to upload.')
         return False
 
     # Now we need the OSM credentials
     auth_header = read_auth()
-    headers = [('Authorization', auth_header)]
+    headers = {'Authorization': auth_header}
 
-    request = MethodRequest(API_ENDPOINT + '/api/0.6/changeset/create',
-                            changeset_xml(changeset_tags),
-                            headers=headers,
-                            method=MethodRequest.PUT)
     try:
-        changeset_id = int(urlopen(request).read())
-        print('Writing to changeset {0}'.format(changeset_id))
+        changeset_id = int(api_request(
+            'changeset/create', 'PUT', raw_result=True,
+            data=changeset_xml(changeset_tags), headers=headers,
+        ))
+        logging.info('Writing to changeset %s', changeset_id)
     except Exception as e:
-        print('Failed to create changeset: {0}'.format(e))
+        logging.exception(e)
+        logging.error('Failed to create changeset: %s', e)
         return False
     osc = changes_to_osc(changes, changeset_id)
 
     ok = True
-    request = MethodRequest('{0}/api/0.6/changeset/{1}/upload'.format(
-        API_ENDPOINT, changeset_id), osc, headers=headers, method=MethodRequest.POST)
     try:
-        urlopen(request)
-    except URLError as e:
-        message = e.read()
-        print('Server rejected the changeset with code {0}: {1}'.format(e.code, message))
+        api_request(
+            'changeset/{}/upload'.format(changeset_id), 'POST',
+            data=osc, headers=headers
+        )
+    except HTTPError as e:
+        logging.error('Server rejected the changeset with code %s: %s', e.code, e.message)
         if e.code == 412:
             # Find the culprit for a failed precondition
-            m = re.search(r'Node (\d+) is still used by (way|relation)s ([0-9,]+)', message)
+            m = re.search(r'Node (\d+) is still used by (way|relation)s ([0-9,]+)', e.message)
             if m:
                 # Find changeset for the first way or relation that started using that node
                 pass
             else:
-                m = re.search(r'(Way|The relation) (\d+) is .+ relations? ([0-9,]+)', message)
+                m = re.search(r'(Way|The relation) (\d+) is .+ relations? ([0-9,]+)', e.message)
                 if m:
                     # Find changeset for the first relation that started using that way or relation
                     pass
                 else:
-                    m = re.search(r'Way (\d+) requires .+ id in \(([0-9,]+\)', message)
+                    m = re.search(r'Way (\d+) requires .+ id in \(([0-9,]+\)', e.message)
                     if m:
                         # Find changeset that deleted at least the first node in the list
                         pass
                     else:
                         m = re.search(r'Relation with id (\d+) .+ due to (\w+) with id (\d+)',
-                                      message)
+                                      e.message)
                         if m:
                             # Find changeset that added member to that relation
                             pass
     except Exception as e:
         ok = False
-        print('Failed to upload changetset contents: {0}'.format(e))
+        logging.error('Failed to upload changetset contents: %s', e)
         # Not returning, since we need to close the changeset
 
-    request = MethodRequest('{0}/api/0.6/changeset/{1}/close'.format(
-        API_ENDPOINT, changeset_id), headers=headers, method=MethodRequest.PUT)
     try:
-        urlopen(request)
+        api_request('changeset/{}/close'.format(changeset_id), 'PUT', headers=headers)
     except Exception as e:
-        print('Failed to close changeset (it will close automatically in an hour): {0}'.format(e))
+        logging.warning(
+            'Failed to close changeset (it will close automatically in an hour): %s', e)
     return ok

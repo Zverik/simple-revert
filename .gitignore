@@ -1,2 +1,6 @@
 *.pyc
 __pycache__/
+restore-number.py
+*.csv
+venv/
+*.egg-info/

@@ -1,9 +1,15 @@
 import sys
+import logging
 from collections import defaultdict
 from copy import deepcopy
-from urllib.parse import quote
-from .common import (obj_to_dict, upload_changes, api_download,
-                     HTTPError, RevertError, changes_to_osc)
+from .common import (
+    obj_to_dict,
+    upload_changes,
+    api_request,
+    HTTPError,
+    RevertError,
+    changes_to_osc
+)
 
 
 def make_diff(obj, obj_prev):
@@ -159,8 +165,7 @@ def apply_diff(diff, obj):
 def print_changesets_for_user(user, limit=15):
     """Prints last 15 changesets for a user."""
     try:
-        root = api_download('changesets?closed=true&display_name={0}'.format(
-            quote(user)), throw=[404])
+        root = api_request('changesets', params={'closed': 'true', 'display_name': user})
         for changeset in root[:limit]:
             created_by = '???'
             comment = '<no comment>'
@@ -169,10 +174,14 @@ def print_changesets_for_user(user, limit=15):
                     created_by = tag.get('v')
                 elif tag.get('k') == 'comment':
                     comment = tag.get('v')
-            print('Changeset {0} created on {1} with {2}:\t{3}'.format(
-                changeset.get('id'), changeset.get('created_at'), created_by, comment))
-    except HTTPError:
-        print('No such user found.')
+            logging.info(
+                'Changeset %s created on %s with %s:\t%s',
+                changeset.get('id'), changeset.get('created_at'), created_by, comment)
+    except HTTPError as e:
+        if e.code == 404:
+            logging.error('No such user found.')
+        else:
+            raise
 
 
 def print_status(changeset_id, obj_type=None, obj_id=None, count=None, total=None):
@@ -199,8 +208,9 @@ def download_changesets(changeset_ids, print_status):
     diffs = defaultdict(dict)
     for changeset_id in changeset_ids:
         print_status(changeset_id)
-        root = api_download('changeset/{0}/download'.format(changeset_id),
-                            sysexit_message='Failed to download changeset {0}'.format(changeset_id))
+        root = api_request(
+            'changeset/{0}/download'.format(changeset_id),
+            sysexit_message='Failed to download changeset {0}'.format(changeset_id))
         # Iterate over each object, download previous version (unless it's creation) and make a diff
         count = total = 0
         for action in root:
@@ -216,9 +226,11 @@ def download_changesets(changeset_ids, print_status):
                 if obj['version'] > 1:
                     print_status(changeset_id, obj['type'], obj['id'], count, total)
                     try:
-                        obj_prev = obj_to_dict(api_download('{0}/{1}/{2}'.format(
-                            obj['type'], obj['id'], obj['version'] - 1), throw=[403])[0])
-                    except HTTPError:
+                        obj_prev = obj_to_dict(api_request('{0}/{1}/{2}'.format(
+                            obj['type'], obj['id'], obj['version'] - 1))[0])
+                    except HTTPError as e:
+                        if e.code != 403:
+                            raise
                         msg = ('\nCannot revert redactions, see version {0} at ' +
                                'https://openstreetmap.org/{1}/{2}/history')
                         raise RevertError(msg.format(obj['version'] - 1, obj['type'], obj['id']))
@@ -240,14 +252,14 @@ def revert_changes(diffs, print_status):
 
     changes = []
     count = 0
-    for kobj, change in diffs.iteritems():
+    for kobj, change in diffs.items():
         count += 1
         if change is None:
             continue
         try:
             # Download the latest version of an object
             print_status(None, kobj[0], kobj[1], count, len(diffs))
-            obj = obj_to_dict(api_download('{0}s?{0}s={1}'.format(kobj[0], kobj[1]))[0])
+            obj = obj_to_dict(api_request('{0}s?{0}s={1}'.format(kobj[0], kobj[1]))[0])
 
             # Apply the change
             obj_new = None
@@ -284,6 +296,7 @@ def main():
         print('To list recent changesets by a user: {0} <user_name>'.format(sys.argv[0]))
         sys.exit(1)
 
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     if len(sys.argv) == 2 and not sys.argv[1].isdigit():
         print_changesets_for_user(sys.argv[1])
         sys.exit(0)
@@ -323,7 +336,3 @@ def main():
         upload_changes(changes, tags)
     else:
         print(changes_to_osc(changes))
-
-
-if __name__ == '__main__':
-    main()

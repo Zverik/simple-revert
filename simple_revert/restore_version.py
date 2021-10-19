@@ -1,15 +1,15 @@
+import logging
 import sys
 import re
-from .common import obj_to_dict, upload_changes, api_download, changes_to_osc, HTTPError
 from collections import deque
-
-try:
-    from lxml import etree
-except ImportError:
-    try:
-        import xml.etree.cElementTree as etree
-    except ImportError:
-        import xml.etree.ElementTree as etree
+from .common import (
+    obj_to_dict,
+    upload_changes,
+    api_request,
+    changes_to_osc,
+    HTTPError,
+    etree
+)
 
 MAX_DEPTH = 10
 
@@ -64,7 +64,7 @@ def safe_print(s):
     sys.stderr.write(s + '\n')
 
 
-def restore_main():
+def main():
     if len(sys.argv) < 2:
         print('Restores a specific version of a given object, undeleting all missing references')
         print()
@@ -75,6 +75,7 @@ def restore_main():
         print('Omit version number to see an object history.')
         sys.exit(1)
 
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     obj_type, obj_id, obj_version = parse_url(sys.argv[1])
     if obj_type is None or obj_id is None:
         safe_print('Please specify correct object type and id.')
@@ -87,23 +88,26 @@ def restore_main():
     history = None
     safe_print('Downloading history of {0} {1}'.format(obj_type, obj_id))
     try:
-        history = api_download('{0}/{1}/history'.format(obj_type, obj_id),
-                               throw=[408, 500, 503, 504])
-    except HTTPError:
+        history = api_request('{0}/{1}/history'.format(obj_type, obj_id))
+    except HTTPError as e:
+        if e.code not in [408, 500, 503, 504]:
+            raise IOError('Unexpected error: {}'.format(e))
         # Failed to read the complete history due to a timeout, read only two versions
         safe_print('History is too large to download. Querying the last version only.')
         history = etree.Element('osm')
         try:
-            obj = api_download('{0}/{1}'.format(obj_type, obj_id), throw=[410])[0]
+            obj = api_request('{0}/{1}'.format(obj_type, obj_id))[0]
             history.append(obj)
         except HTTPError:
+            if e.code != 410:
+                raise IOError('Unexpected error: {}'.format(e))
             safe_print('To restore a deleted version, we need to know the last ' +
                        'version number, and we failed.')
             sys.exit(2)
 
     if obj_version is None:
         # Print history and exit
-        for h in history[-MAX_DEPTH-1:]:
+        for h in history[-MAX_DEPTH - 1:]:
             print('Version {0}: {1}changeset {2} on {3} by {4}'.format(
                 h.get('version'), 'deleted in ' if h.get('visible') == 'false' else '',
                 h.get('changeset'), h.get('timestamp'), h.get('user')))
@@ -131,7 +135,7 @@ def restore_main():
         if int(h.get('version')) == obj_version:
             vref = h
     if vref is None:
-        vref = api_download('{0}/{1}/{2}'.format(obj_type, obj_id, obj_version))[0]
+        vref = api_request('{0}/{1}/{2}'.format(obj_type, obj_id, obj_version))[0]
         history.insert(0, vref)
 
     if vref.get('visible') == 'false':
@@ -156,10 +160,12 @@ def restore_main():
         sys.stderr.flush()
         # Download last version and grab references from it
         try:
-            obj = obj_to_dict(api_download('{0}/{1}'.format(qobj[0], qobj[1]), throw=[410])[0])
+            obj = obj_to_dict(api_request('{0}/{1}'.format(qobj[0], qobj[1]))[0])
         except HTTPError as e:
+            if e.code != 410:
+                raise IOError('Unexpected error: {}'.format(e))
             # Found a deleted object, download history and restore
-            ohist = api_download('{0}/{1}/history'.format(qobj[0], qobj[1]))
+            ohist = api_request('{0}/{1}/history'.format(qobj[0], qobj[1]))
             i = len(ohist) - 1
             while i > 0 and ohist[i].get('visible') == 'false':
                 i -= 1
@@ -185,7 +191,3 @@ def restore_main():
         upload_changes(changes, tags)
     else:
         print(changes_to_osc(changes))
-
-
-if __name__ == '__main__':
-    restore_main()
