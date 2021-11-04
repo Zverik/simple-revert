@@ -64,25 +64,8 @@ def safe_print(s):
     sys.stderr.write(s + '\n')
 
 
-def main():
-    if len(sys.argv) < 2:
-        print('Restores a specific version of a given object, undeleting all missing references')
-        print()
-        print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}]'.format(sys.argv[0]))
-        print()
-        print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
-        print('Use -1 to revert last version (e.g. undelete an object).')
-        print('Omit version number to see an object history.')
-        sys.exit(1)
-
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-    obj_type, obj_id, obj_version = parse_url(sys.argv[1])
-    if obj_type is None or obj_id is None:
-        safe_print('Please specify correct object type and id.')
-        sys.exit(1)
-    if len(sys.argv) > 2:
-        obj_version = int(sys.argv[2])
-
+def get_obj_history(obj_type, obj_id, obj_version):
+    """Download object history; params are from tuple returned by parse_url. If obj_version None, prints history and exits. Otherwise returns object's history list."""
     # Download full object history
     # If we fail, revert to a given version blindly
     history = None
@@ -113,7 +96,12 @@ def main():
                 h.get('changeset'), h.get('timestamp'), h.get('user')))
         sys.exit(0)
 
-    last_version = int(history[-1].get('version'))
+    return history
+
+
+def get_obj_version(obj_type, obj_id, obj_version, obj_history):
+    """Get requested object version, or exit(1). Returns tuple (last_version, vref)"""
+    last_version = int(obj_history[-1].get('version'))
     if obj_version < 0:
         obj_version = last_version + obj_version
 
@@ -131,16 +119,24 @@ def main():
 
     # If we downloaded an incomplete history, add that version
     vref = None
-    for h in history:
+    for h in obj_history:
         if int(h.get('version')) == obj_version:
             vref = h
     if vref is None:
         vref = api_request('{0}/{1}/{2}'.format(obj_type, obj_id, obj_version))[0]
-        history.insert(0, vref)
+        obj_history.insert(0, vref)
 
     if vref.get('visible') == 'false':
         safe_print('Will not delete the object, use other means.')
         sys.exit(1)
+
+    return(last_version, vref)
+
+
+def build_undelete_changes(obj_type, obj_id, obj_version, obj_history):
+    """Traverse obj_history to build changeset to undelete it. Returns tuple (changes or None, comment)"""
+    comment = None
+    last_version, vref = get_obj_version(obj_type, obj_id, obj_version, obj_history)
 
     # Now building a list of changes, traversing all references, finding objects to undelete
     obj = obj_to_dict(vref)
@@ -148,7 +144,7 @@ def main():
     changes = [obj]
     queue = deque()
     processed = {}
-    queue.extend(find_new_refs(obj, obj_to_dict(history[-1])))
+    queue.extend(find_new_refs(obj, obj_to_dict(obj_history[-1])))
     singleref = False
     while len(queue):
         qobj = queue.popleft()
@@ -181,12 +177,40 @@ def main():
     if singleref:
         sys.stderr.write('\n')
 
+    if changes:
+        comment = 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
+    return (changes, comment)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print('Restores a specific version of a given object, undeleting all missing references')
+        print()
+        print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}]'.format(sys.argv[0]))
+        print()
+        print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
+        print('Use -1 to revert last version (e.g. undelete an object).')
+        print('Omit version number to see an object history.')
+        sys.exit(1)
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    obj_type, obj_id, obj_version = parse_url(sys.argv[1])
+    if obj_type is None or obj_id is None:
+        safe_print('Please specify correct object type and id.')
+        sys.exit(1)
+    if len(sys.argv) > 2:
+        obj_version = int(sys.argv[2])
+
+    history = get_obj_history(obj_type, obj_id, obj_version)
+
+    changes, comment = build_undelete_changes(obj_type, obj_id, obj_version, history)
+
     if not changes:
         sys.stderr.write('No changes to upload.\n')
     elif sys.stdout.isatty():
         tags = {
             'created_by': 'restore-version.py',
-            'comment': 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
+            'comment': comment
         }
         upload_changes(changes, tags)
     else:
