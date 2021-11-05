@@ -61,7 +61,7 @@ def find_new_refs(old, last=None):
     return result
 
 
-def safe_print(s):
+def safe_print(s=''):
     sys.stderr.write(s + '\n')
 
 
@@ -209,12 +209,15 @@ def build_undelete_changes(restore_objs):
 def print_usage_and_exit():
     print('Restores a specific version of given objects, undeleting all missing references')
     print()
-    print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}] ' +
-          '[{{<typeNNN> <version>|-N}} | {{<url>}}] ...'.format(sys.argv[0]))
+    print('Usage:')
+    print('  {0} {{<typeNNN|<url>}}  to see the object\'s history.'.format(sys.argv[0]))
+    print('  {0} {{<typeNNN|<url>}} {{<version>|-N}}'.format(sys.argv[0]) +
+          '  to revert an object to an earlier version.')
+    print('  {0} {{<obj>}} {{<ver>}} {{<obj>}} {{<ver>}} ...'.format(sys.argv[0]) +
+          '  to restore multiple objects.')
     print()
     print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
     print('Use -1 to revert last version (e.g. undelete an object).')
-    print('Omit version number to see a single object\'s history.')
     sys.exit(1)
 
 
@@ -239,11 +242,13 @@ def main():
             elif i < len(sys.argv):
                 try:
                     obj_version = int(sys.argv[i])
+                    i += 1
                 except ValueError:
-                    safe_print('Expected version number after {0}, got {1}'.format(
-                        sys.argv[i-1], sys.argv[i]))
-                i += 1
+                    pass
             if obj_version is None:
+                safe_print('Expected version number after {0}.'.format(
+                    sys.argv[i - 1]))
+                safe_print()
                 print_usage_and_exit()
         restore_objs.append([obj_type, obj_id, obj_version])
 

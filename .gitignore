@@ -4,3 +4,5 @@ restore-number.py
 *.csv
 venv/
 *.egg-info/
+build/
+dist/
