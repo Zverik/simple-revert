@@ -66,7 +66,10 @@ def safe_print(s):
 
 
 def get_obj_history(obj_type, obj_id, obj_version):
-    """Download object history; params are from tuple returned by parse_url. If obj_version None, prints history and exits. Otherwise returns object's history list."""
+    """ Download object history; params are from tuple returned by parse_url.
+    If obj_version None, prints history and exits.
+    Returns object's history list.
+    """
     # Download full object history
     # If we fail, revert to a given version blindly
     history = None
@@ -101,7 +104,9 @@ def get_obj_history(obj_type, obj_id, obj_version):
 
 
 def get_obj_version(obj_type, obj_id, obj_version, obj_history):
-    """Get requested object version, or exit(1). Updates obj_version if negative. Returns tuple (obj_version, last_version, vref)"""
+    """ Get requested object version, or exit(1). Updates obj_version if negative.
+    Returns tuple (obj_version, last_version, vref).
+    """
     last_version = int(obj_history[-1].get('version'))
     if obj_version < 0:
         obj_version = last_version + obj_version
@@ -135,7 +140,10 @@ def get_obj_version(obj_type, obj_id, obj_version, obj_history):
 
 
 def build_undelete_changes(restore_objs):
-    """For each (obj_type, obj_id, obj_version, obj_history) item in restore_objs, traverse its obj_history to build changeset to undelete it. Returns tuple (changes or [], comment)"""
+    """ For each (obj_type, obj_id, obj_version, obj_history) item in restore_objs,
+    traverse its obj_history to build changeset to undelete it.
+    Returns tuple (changes or [], comment).
+    """
     comment = ""
     changes = []
     queue = deque()
@@ -143,7 +151,8 @@ def build_undelete_changes(restore_objs):
     for obj_item in restore_objs:
         obj_type, obj_id, obj_version, obj_history = obj_item[0:4]
 
-        obj_version, last_version, vref = get_obj_version(obj_type, obj_id, obj_version, obj_history)
+        obj_version, last_version, vref = get_obj_version(
+            obj_type, obj_id, obj_version, obj_history)
 
         # Now building a list of changes, traversing all references, finding objects to undelete
         obj = obj_to_dict(vref)
@@ -198,9 +207,10 @@ def build_undelete_changes(restore_objs):
 
 
 def print_usage_and_exit():
-    print('Restores a specific version of each given object, undeleting all missing references')
+    print('Restores a specific version of given objects, undeleting all missing references')
     print()
-    print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}] [{{<typeNNN> <version>|-N}} | {{<url>}}] ...'.format(sys.argv[0]))
+    print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}] ' +
+          '[{{<typeNNN> <version>|-N}} | {{<url>}}] ...'.format(sys.argv[0]))
     print()
     print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
     print('Use -1 to revert last version (e.g. undelete an object).')
@@ -230,7 +240,8 @@ def main():
                 try:
                     obj_version = int(sys.argv[i])
                 except ValueError:
-                    safe_print('Expected version number after {0}, got {1}'.format(sys.argv[i-1], sys.argv[i]))
+                    safe_print('Expected version number after {0}, got {1}'.format(
+                        sys.argv[i-1], sys.argv[i]))
                 i += 1
             if obj_version is None:
                 print_usage_and_exit()
