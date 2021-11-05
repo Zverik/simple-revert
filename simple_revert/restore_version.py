@@ -12,6 +12,7 @@ from .common import (
 )
 
 MAX_DEPTH = 10
+MAX_OBJECTS = 20  # might reach a max comment length first
 
 
 def parse_url(s):
@@ -100,7 +101,7 @@ def get_obj_history(obj_type, obj_id, obj_version):
 
 
 def get_obj_version(obj_type, obj_id, obj_version, obj_history):
-    """Get requested object version, or exit(1). Returns tuple (last_version, vref)"""
+    """Get requested object version, or exit(1). Updates obj_version if negative. Returns tuple (obj_version, last_version, vref)"""
     last_version = int(obj_history[-1].get('version'))
     if obj_version < 0:
         obj_version = last_version + obj_version
@@ -130,21 +131,32 @@ def get_obj_version(obj_type, obj_id, obj_version, obj_history):
         safe_print('Will not delete the object, use other means.')
         sys.exit(1)
 
-    return(last_version, vref)
+    return(obj_version, last_version, vref)
 
 
-def build_undelete_changes(obj_type, obj_id, obj_version, obj_history):
-    """Traverse obj_history to build changeset to undelete it. Returns tuple (changes or None, comment)"""
-    comment = None
-    last_version, vref = get_obj_version(obj_type, obj_id, obj_version, obj_history)
-
-    # Now building a list of changes, traversing all references, finding objects to undelete
-    obj = obj_to_dict(vref)
-    obj['version'] = last_version
-    changes = [obj]
+def build_undelete_changes(restore_objs):
+    """For each (obj_type, obj_id, obj_version, obj_history) item in restore_objs, traverse its obj_history to build changeset to undelete it. Returns tuple (changes or [], comment)"""
+    comment = ""
+    changes = []
     queue = deque()
+
+    for obj_item in restore_objs:
+        obj_type, obj_id, obj_version, obj_history = obj_item[0:4]
+
+        obj_version, last_version, vref = get_obj_version(obj_type, obj_id, obj_version, obj_history)
+
+        # Now building a list of changes, traversing all references, finding objects to undelete
+        obj = obj_to_dict(vref)
+        obj['version'] = last_version
+        changes.append(obj)
+        queue.extend(find_new_refs(obj, obj_to_dict(obj_history[-1])))
+        comment_part = 'version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
+        if len(comment):
+            comment += ", " + comment_part
+        else:
+            comment = "Restoring " + comment_part
+
     processed = {}
-    queue.extend(find_new_refs(obj, obj_to_dict(obj_history[-1])))
     singleref = False
     while len(queue):
         qobj = queue.popleft()
@@ -174,36 +186,65 @@ def build_undelete_changes(obj_type, obj_id, obj_version, obj_history):
             changes.append(obj)
             queue.extend(find_new_refs(obj))
         processed[(obj['type'], obj['id'])] = True
+
     if singleref:
+        # update download counts, in case last item was already processed
+        sys.stderr.write('\rDownloading referenced {0}, {1} left, {2} to undelete{3}'.format(
+            qobj[0], len(queue), len(changes) - 1, ' ' * 10))
+        sys.stderr.flush()
         sys.stderr.write('\n')
 
-    if changes:
-        comment = 'Restoring version {0} of {1} {2}'.format(obj_version, obj_type, obj_id)
     return (changes, comment)
+
+
+def print_usage_and_exit():
+    print('Restores a specific version of each given object, undeleting all missing references')
+    print()
+    print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}] [{{<typeNNN> <version>|-N}} | {{<url>}}] ...'.format(sys.argv[0]))
+    print()
+    print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
+    print('Use -1 to revert last version (e.g. undelete an object).')
+    print('Omit version number to see a single object\'s history.')
+    sys.exit(1)
 
 
 def main():
     if len(sys.argv) < 2:
-        print('Restores a specific version of a given object, undeleting all missing references')
-        print()
-        print('Usage: {0} {{<typeNNN>|<url>}} [{{<version>|-N}}]'.format(sys.argv[0]))
-        print()
-        print('URLs both from osm.org and api.osm.org (even with version) are accepted.')
-        print('Use -1 to revert last version (e.g. undelete an object).')
-        print('Omit version number to see an object history.')
-        sys.exit(1)
+        print_usage_and_exit()
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')
-    obj_type, obj_id, obj_version = parse_url(sys.argv[1])
-    if obj_type is None or obj_id is None:
-        safe_print('Please specify correct object type and id.')
+
+    restore_objs = []
+    i = 1
+    while (i < len(sys.argv)):
+        obj_type, obj_id, obj_version = parse_url(sys.argv[i])
+        i += 1
+        if obj_type is None or obj_id is None:
+            safe_print('Please specify correct object type and id.')
+            sys.exit(1)
+        if obj_version is None:
+            if len(sys.argv) == 2:
+                # print single history, exit(0)
+                get_obj_history(obj_type, obj_id, None)
+            elif i < len(sys.argv):
+                try:
+                    obj_version = int(sys.argv[i])
+                except ValueError:
+                    safe_print('Expected version number after {0}, got {1}'.format(sys.argv[i-1], sys.argv[i]))
+                i += 1
+            if obj_version is None:
+                print_usage_and_exit()
+        restore_objs.append([obj_type, obj_id, obj_version])
+
+    if len(restore_objs) > MAX_OBJECTS:
+        safe_print('Restoring more than {0} objects is blocked.'.format(MAX_OBJECTS))
         sys.exit(1)
-    if len(sys.argv) > 2:
-        obj_version = int(sys.argv[2])
 
-    history = get_obj_history(obj_type, obj_id, obj_version)
+    for olist in restore_objs:
+        history = get_obj_history(olist[0], olist[1], olist[2])
+        olist.append(history)
 
-    changes, comment = build_undelete_changes(obj_type, obj_id, obj_version, history)
+    changes, comment = build_undelete_changes(restore_objs)
 
     if not changes:
         sys.stderr.write('No changes to upload.\n')
