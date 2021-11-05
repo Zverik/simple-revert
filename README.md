@@ -5,7 +5,7 @@ Here are two Python scripts that:
 * Revert simple OpenStreetMap changesets.
 Way and relation structural changes cannot be reverted, all other changes can.
 For example, if you deleted a lot of objects, or changed many tags at once.
-* Restore an old version of a given object. All of its deleted references
+* Restore an old version of given object(s). All of their deleted references
 are restored as well.
 
 If there are no errors, scripts would ask you for OSM login and password (which
@@ -43,6 +43,11 @@ to the last version. E.g. this command will revert the last change to a node:
     restore_version n12345 -1
 
 To get a list of recent versions, run the script without a version argument.
+
+You can pass several objects to restore them all in one changeset:
+
+    restore_version n12345 -1 w1234 -1 w1235 -1
+
 
 ## Author and License
 
