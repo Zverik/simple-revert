@@ -336,3 +336,7 @@ def main():
         upload_changes(changes, tags)
     else:
         print(changes_to_osc(changes))
+
+
+if __name__ == '__main__':
+    main()
