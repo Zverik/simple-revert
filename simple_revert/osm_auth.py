@@ -1,12 +1,12 @@
 #Common things for oauth with OSM
 #Written for API 0.6's OAuth
-from cmath import pi
+import os
 import json
 import requests_oauthlib as oauth
 
-CONFIG_NAME = 'authconfig.json'
-API_ENDPOINT = 'https://master.apis.dev.openstreetmap.org/api/0.6/'
-OAUTH_ENDPOINT = "https://master.apis.dev.openstreetmap.org/oauth/"
+CONFIG_NAME = os.path.join(os.path.dirname(__file__), 'authConfig.json')
+API_ENDPOINT = 'https://www.openstreetmap.org/api/0.6/'
+OAUTH_ENDPOINT = 'https://www.openstreetmap.org/oauth/'
 
 #Save the OAuth details to file
 def writeAuthConfig(client_key: str, client_secret: str, token: str, token_secret: str) -> bool:
