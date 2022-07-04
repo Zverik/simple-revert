@@ -5,7 +5,6 @@ from .simple_revert import (
     revert_changes,
 )
 from .common import (
-    read_auth,
     obj_to_dict,
     dict_to_obj,
     HTTPError,
@@ -14,5 +13,4 @@ from .common import (
     changes_to_osc,
     changeset_xml,
     upload_changes,
-    API_ENDPOINT,
 )
