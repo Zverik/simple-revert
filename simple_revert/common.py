@@ -201,7 +201,7 @@ def upload_changes(changes, changeset_tags):
                     # Find changeset for the first relation that started using that way or relation
                     pass
                 else:
-                    m = re.search(r'Way (\d+) requires .+ id in \(([0-9,]+\)', e.message)
+                    m = re.search(r'Way (\d+) requires .+ id in ([0-9,]+)', e.message)
                     if m:
                         # Find changeset that deleted at least the first node in the list
                         pass
