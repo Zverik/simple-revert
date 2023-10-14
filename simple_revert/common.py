@@ -1,9 +1,8 @@
 # Common constants and functions for reverting scripts.
-import getpass
-import base64
 import logging
 import re
 import requests
+from oauthcli import OpenStreetMapAuth
 
 try:
     from lxml import etree
@@ -56,21 +55,31 @@ def api_request(endpoint, method='GET', sysexit_message=None,
     return resp.text
 
 
+def auth_request(auth, endpoint, method='GET', sysexit_message=None,
+                 raw_result=False, headers=None, **kwargs):
+    if not headers:
+        headers = {}
+    headers['Content-Type'] = 'application/xml'
+    try:
+        resp = auth.request(method, endpoint, headers=headers, **kwargs)
+        resp.encoding = 'utf-8'
+        if resp.status_code != 200:
+            raise HTTPError(resp.status_code, resp.text)
+        if resp.content and not raw_result:
+            return etree.fromstring(resp.content)
+    except Exception as e:
+        if sysexit_message is not None:
+            raise RevertError(': '.join((sysexit_message, str(e))))
+        raise e
+    return resp.text
+
+
 def read_auth():
-    """Read login and password from keyboard, and prepare an basic auth header."""
-    ok = False
-    while not ok:
-        login = input('OSM Login: ')
-        auth_header = 'Basic {0}'.format(base64.b64encode('{0}:{1}'.format(
-            login, getpass.getpass('OSM Password: ')).encode('utf-8')).decode('utf-8'))
-        try:
-            result = api_request('user/details', headers={'Authorization': auth_header})
-            ok = len(result) > 0
-        except Exception as e:
-            logging.error(e)
-        if not ok:
-            logging.warning('You must have mistyped. Please try again.')
-    return auth_header
+    return OpenStreetMapAuth(
+        'BKE4kqTvJOkqsvzUjJ2RcYjDs8Fb6Rcl3Z5jbKOol3k',
+        'gHzefScvYtfeHVeSQ_2dJ5enamphTpWMJLa0IXmQMc8',
+        scopes=['read_prefs', 'write_api'],
+    ).auth_server(token_test=lambda r: r.get('user/details'))
 
 
 def obj_to_dict(obj):
@@ -166,13 +175,12 @@ def upload_changes(changes, changeset_tags):
         return False
 
     # Now we need the OSM credentials
-    auth_header = read_auth()
-    headers = {'Authorization': auth_header}
+    auth = read_auth()
 
     try:
-        changeset_id = int(api_request(
-            'changeset/create', 'PUT', raw_result=True,
-            data=changeset_xml(changeset_tags), headers=headers,
+        changeset_id = int(auth_request(
+            auth, 'changeset/create', 'PUT', raw_result=True,
+            data=changeset_xml(changeset_tags),
         ))
         logging.info('Writing to changeset %s', changeset_id)
     except Exception as e:
@@ -183,9 +191,9 @@ def upload_changes(changes, changeset_tags):
 
     ok = True
     try:
-        api_request(
-            'changeset/{}/upload'.format(changeset_id), 'POST',
-            data=osc, headers=headers
+        auth_request(
+            auth, 'changeset/{}/upload'.format(changeset_id), 'POST',
+            data=osc,
         )
     except HTTPError as e:
         logging.error('Server rejected the changeset with code %s: %s', e.code, e.message)
@@ -217,7 +225,7 @@ def upload_changes(changes, changeset_tags):
         # Not returning, since we need to close the changeset
 
     try:
-        api_request('changeset/{}/close'.format(changeset_id), 'PUT', headers=headers)
+        auth_request(auth, 'changeset/{}/close'.format(changeset_id), 'PUT')
     except Exception as e:
         logging.warning(
             'Failed to close changeset (it will close automatically in an hour): %s', e)
